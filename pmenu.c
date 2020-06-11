@@ -15,7 +15,6 @@
 #define PROGNAME "pmenu"
 #define ITEMPREV 0
 #define ITEMNEXT 1
-#define IMGPADDING 8
 
 /* macros */
 #define LEN(x) (sizeof (x) / sizeof (x[0]))
@@ -27,72 +26,65 @@ enum {ColorFG, ColorBG, ColorLast};
 
 /* draw context structure */
 struct DC {
-	XftColor normal[ColorLast];
-	XftColor selected[ColorLast];
-	XftColor border;
-	XftColor separator;
+	XftColor normal[ColorLast];     /* color of unselected slice */
+	XftColor selected[ColorLast];   /* color of selected slice */
+	XftColor border;                /* color of border */
+	XftColor separator;             /* color of the separator */
 
-	GC gc;
-	XftFont *font;
+	GC gc;                          /* graphics context */
+	XftFont *font;                  /* font */
 };
 
-/* menu geometry structure */
-struct Geometry {
-	int border;             /* window border width */
-	int separator;          /* menu separator width */
-	int itemw, itemh;       /* item width and height */
-	int cursx, cursy;       /* cursor position */
-	int screenw, screenh;   /* screen width and height */
-};
-
-/* menu item structure */
-struct Item {
-	char *label;            /* string to be drawed on menu */
-	char *output;           /* string to be outputed when item is clicked */
+/* pie slice structure */
+struct Slice {
+	char *label;            /* string to be drawed on the slice */
+	char *output;           /* string to be outputed when slice is clicked */
 	char *file;             /* filename of the icon */
-	int angle1, angle2;
-	int x, y;
+	size_t labellen;        /* strlen(label) */
 
-	/* line segment separator */
+	int x, y;               /* position of the pointer of the slice */
+	int labelx, labely;     /* position of the label */
+	int angle1, angle2;     /* angle of the borders of the slice */
 	int linexi, lineyi;     /* position of the inner point of the line segment */
 	int linexo, lineyo;     /* position of the outer point of the line segment */
+	int iconx, icony;       /* position of the icon */
 
-	int h;
-	int labelx, labely;     /* position of the label */
-	size_t labellen;        /* strlen(label) */
-	struct Item *prev;      /* previous item */
-	struct Item *next;      /* next item */
-	struct Menu *submenu;   /* submenu spawned by clicking on item */
-	Imlib_Image icon;
+	struct Slice *prev;     /* previous slice */
+	struct Slice *next;     /* next slice */
+	struct Menu *submenu;   /* submenu spawned by clicking on slice */
+	Imlib_Image icon;       /* icon */
 };
 
 /* menu structure */
 struct Menu {
 	struct Menu *parent;    /* parent menu */
-	struct Item *caller;    /* item that spawned the menu */
-	struct Item *list;      /* list of items contained by the menu */
-	struct Item *selected;  /* item currently selected in the menu */
-	unsigned nitems;        /* number of items */
-	int x, y, w, h;         /* menu geometry */
+	struct Slice *caller;   /* slice that spawned the menu */
+	struct Slice *list;     /* list of slices contained by the pie menu */
+	struct Slice *selected; /* slice currently selected in the menu */
+	unsigned nslices;       /* number of slices */
+	int x, y;               /* menu position */
 	int halfslice;          /* angle of half a slice of the pie menu */
 	unsigned level;         /* menu level relative to root */
 	Drawable pixmap;        /* pixmap to draw the menu on */
-	XftDraw *draw;
+	XftDraw *draw;          /* drawable to draw the text on*/
 	Window win;             /* menu window to map on the screen */
 };
 
-/* circle bitmap mask structure */
+/* geometry of the pie and bitmap that shapes it */
 struct Pie {
-	GC gc;
-	Drawable clip;
-	Drawable bounding;
+	GC gc;              /* graphic context of the bitmaps */
+	Drawable clip;      /* bitmap shaping the clip region (without borders) */
+	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
 
-	int diameter;
-	int radius;
-	int border;
+	int diameter;       /* diameter of the pie */
+	int radius;         /* radius of the pie */
+	int border;         /* border of the pie */
 
 	int innercirclex;
 	int innercircley;
+	int innercirclediameter;
+
+	int iconsize;
 
 	double separatorbeg;
 	double separatorend;
@@ -102,23 +94,23 @@ struct Pie {
 static void getresources(void);
 static void getcolor(const char *s, XftColor *color);
 static void setupdc(void);
-void setuppie(void);
-static void calcgeom(struct Geometry *geom);
-static struct Item *allocitem(const char *label, const char *output, char *file);
-static struct Menu *allocmenu(struct Menu *parent, struct Item *list, unsigned level);
+static void setuppie(void);
+static struct Slice *allocslice(const char *label, const char *output, char *file);
+static struct Menu *allocmenu(struct Menu *parent, struct Slice *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
+static Imlib_Image loadicon(const char *file, int size);
 static struct Menu *parsestdin(void);
-static void setupitems(struct Menu *menu);
-static void setupmenupos(struct Geometry *geom, struct Menu *menu);
-static void setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh);
+static void setupslices(struct Menu *menu);
+static void setupmenupos(struct Menu *menu);
+static void setupmenu(struct Menu *menu);
 static void grabpointer(void);
 static void grabkeyboard(void);
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
-static struct Item *getitem(struct Menu *menu, int x, int y);
+static struct Slice *getslice(struct Menu *menu, int x, int y);
 static void mapmenu(struct Menu *currmenu);
-static void drawitem(struct Menu *menu, struct Item *item, XftColor *color);
+static void drawslice(struct Menu *menu, struct Slice *slice, XftColor *color);
 static void drawmenu(struct Menu *currmenu);
-static struct Item *itemcycle(struct Menu *currmenu, int direction);
+static struct Slice *slicecycle(struct Menu *currmenu, int direction);
 static void run(struct Menu *currmenu);
 static void freemenu(struct Menu *menu);
 static void cleanup(void);
@@ -131,7 +123,6 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
-static Atom wmdelete;
 
 /* The pie bitmap structure */
 static struct Pie pie;
@@ -143,8 +134,6 @@ int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
-	struct Geometry geom;
-	XClassHint classh;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "")) != -1) {
@@ -157,7 +146,7 @@ main(int argc, char *argv[])
 	argc -= optind;
 	argv += optind;
 
-	if (argc > 1)
+	if (argc != 0)
 		usage();
 
 	/* open connection to server and set X variables */
@@ -167,7 +156,6 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
-	wmdelete=XInternAtom(dpy, "WM_DELETE_WINDOW", True);
 
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
@@ -179,21 +167,13 @@ main(int argc, char *argv[])
 	/* setup */
 	getresources();
 	setupdc();
-	calcgeom(&geom);
 	setuppie();
-
-	/* set window class */
-	classh.res_class = PROGNAME;
-	if (argc == 1)
-		classh.res_name = *argv;
-	else
-		classh.res_name = PROGNAME;
 
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	setupmenu(&geom, rootmenu, &classh);
+	setupmenu(rootmenu);
 
 	/* grab mouse and keyboard */
 	grabpointer();
@@ -289,42 +269,29 @@ setupdc(void)
 	dc.gc = XCreateGC(dpy, rootwin, valuemask, &values);
 }
 
-/* calculate menu and screen geometry */
-static void
-calcgeom(struct Geometry *geom)
-{
-	Window w1, w2;  /* unused variables */
-	int a, b;       /* unused variables */
-	unsigned mask;  /* unused variable */
-
-	XQueryPointer(dpy, rootwin, &w1, &w2, &geom->cursx, &geom->cursy, &a, &b, &mask);
-	geom->screenw = DisplayWidth(dpy, screen);
-	geom->screenh = DisplayHeight(dpy, screen);
-	geom->itemh = dc.font->height + padding_pixels * 2;
-	geom->itemw = width_pixels;
-	geom->border = border_pixels;
-	geom->separator = separator_pixels;
-}
-
 /* setup pie */
-void
+static void
 setuppie(void)
 {
 	XGCValues values;
 	unsigned long valuemask;
 	unsigned x, y;
-	int fulldiameter;       /* diameter + border */
+	int fulldiameter;       /* diameter + border * 2 */
 
 	/* set pie geometry */
 	pie.border = border_pixels;
 	pie.diameter = diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
+	pie.iconsize = (pie.radius + 1) / 2;
+	fulldiameter = pie.diameter + (pie.border * 2);
 
-	/* set the  */
+	/* set the separator beginning and end */
 	pie.separatorbeg = separatorbeg;
 	pie.separatorend = separatorend;
 
-	fulldiameter = pie.diameter + (pie.border * 2);
+	/* set the inner circle position */
+	pie.innercircley = pie.innercirclex = pie.radius - pie.radius * pie.separatorbeg;
+	pie.innercirclediameter = (pie.radius * pie.separatorbeg) * 2;
 
 	x = y = (pie.diameter + 1) / 2;
 
@@ -351,49 +318,48 @@ setuppie(void)
 	         fulldiameter, fulldiameter, 0, 360*64);
 }
 
-/* allocate an item */
-static struct Item *
-allocitem(const char *label, const char *output, char *file)
+/* allocate an slice */
+static struct Slice *
+allocslice(const char *label, const char *output, char *file)
 {
-	struct Item *item;
+	struct Slice *slice;
 
-	if ((item = malloc(sizeof *item)) == NULL)
+	if ((slice = malloc(sizeof *slice)) == NULL)
 		err(1, "malloc");
 	if (label == NULL) {
-		item->label = NULL;
-		item->output = NULL;
+		slice->label = NULL;
+		slice->output = NULL;
 	} else {
-		if ((item->label = strdup(label)) == NULL)
+		if ((slice->label = strdup(label)) == NULL)
 			err(1, "strdup");
 		if (label == output) {
-			item->output = item->label;
+			slice->output = slice->label;
 		} else {
-			if ((item->output = strdup(output)) == NULL)
+			if ((slice->output = strdup(output)) == NULL)
 				err(1, "strdup");
 		}
 	}
 	if (file == NULL) {
-		item->file = NULL;
+		slice->file = NULL;
 	} else {
-		if ((item->file = strdup(file)) == NULL)
+		if ((slice->file = strdup(file)) == NULL)
 			err(1, "strdup");
 	}
-	item->y = 0;
-	item->h = 0;
-	if (item->label == NULL)
-		item->labellen = 0;
+	slice->y = 0;
+	if (slice->label == NULL)
+		slice->labellen = 0;
 	else
-		item->labellen = strlen(item->label);
-	item->next = NULL;
-	item->submenu = NULL;
-	item->icon = NULL;
+		slice->labellen = strlen(slice->label);
+	slice->next = NULL;
+	slice->submenu = NULL;
+	slice->icon = NULL;
 
-	return item;
+	return slice;
 }
 
 /* allocate a menu */
 static struct Menu *
-allocmenu(struct Menu *parent, struct Item *list, unsigned level)
+allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
 {
 	XSetWindowAttributes swa;
 	struct Menu *menu;
@@ -404,9 +370,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	menu->list = list;
 	menu->caller = NULL;
 	menu->selected = NULL;
-	menu->nitems = 0;
-	menu->w = pie.diameter;
-	menu->h = pie.diameter;
+	menu->nslices = 0;
 	menu->x = 0;    /* calculated by setupmenu() */
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
@@ -426,8 +390,6 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	XShapeCombineMask(dpy, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
 	XShapeCombineMask(dpy, menu->win, ShapeBounding, -pie.border, -pie.border, pie.bounding, ShapeSet);
 
-	XSetWMProtocols(dpy, menu->win, &wmdelete, 1);
-
 	return menu;
 }
 
@@ -435,24 +397,24 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 static struct Menu *
 buildmenutree(unsigned level, const char *label, const char *output, char *file)
 {
-	static struct Menu *prevmenu = NULL;    /* menu the previous item was added to */
+	static struct Menu *prevmenu = NULL;    /* menu the previous slice was added to */
 	static struct Menu *rootmenu = NULL;    /* menu to be returned */
-	struct Item *curritem = NULL;           /* item currently being read */
-	struct Item *item;                      /* dummy item for loops */
+	struct Slice *currslice = NULL;           /* slice currently being read */
+	struct Slice *slice;                      /* dummy slice for loops */
 	struct Menu *menu;                      /* dummy menu for loops */
 	unsigned i;
 
-	/* create the item */
-	curritem = allocitem(label, output, file);
+	/* create the slice */
+	currslice = allocslice(label, output, file);
 
-	/* put the item in the menu tree */
+	/* put the slice in the menu tree */
 	if (prevmenu == NULL) {                 /* there is no menu yet */
-		menu = allocmenu(NULL, curritem, level);
+		menu = allocmenu(NULL, currslice, level);
 		rootmenu = menu;
 		prevmenu = menu;
-		curritem->prev = NULL;
-	} else if (level < prevmenu->level) {   /* item is continuation of a parent menu */
-		/* go up the menu tree until find the menu this item continues */
+		currslice->prev = NULL;
+	} else if (level < prevmenu->level) {   /* slice is continuation of a parent menu */
+		/* go up the menu tree until find the menu this slice continues */
 		for (menu = prevmenu, i = level;
 			  menu != NULL && i != prevmenu->level;
 			  menu = menu->parent, i++)
@@ -460,39 +422,39 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 		if (menu == NULL)
 			errx(1, "reached NULL menu");
 
-		/* find last item in the new menu */
-		for (item = menu->list; item->next != NULL; item = item->next)
+		/* find last slice in the new menu */
+		for (slice = menu->list; slice->next != NULL; slice = slice->next)
 			;
 
 		prevmenu = menu;
-		item->next = curritem;
-		curritem->prev = item;
-	} else if (level == prevmenu->level) {  /* item is a continuation of current menu */
-		/* find last item in the previous menu */
-		for (item = prevmenu->list; item->next != NULL; item = item->next)
+		slice->next = currslice;
+		currslice->prev = slice;
+	} else if (level == prevmenu->level) {  /* slice is a continuation of current menu */
+		/* find last slice in the previous menu */
+		for (slice = prevmenu->list; slice->next != NULL; slice = slice->next)
 			;
 
-		item->next = curritem;
-		curritem->prev = item;
-	} else if (level > prevmenu->level) {   /* item begins a new menu */
-		menu = allocmenu(prevmenu, curritem, level);
+		slice->next = currslice;
+		currslice->prev = slice;
+	} else if (level > prevmenu->level) {   /* slice begins a new menu */
+		menu = allocmenu(prevmenu, currslice, level);
 
-		/* find last item in the previous menu */
-		for (item = prevmenu->list; item->next != NULL; item = item->next)
+		/* find last slice in the previous menu */
+		for (slice = prevmenu->list; slice->next != NULL; slice = slice->next)
 			;
 
 		prevmenu = menu;
-		menu->caller = item;
-		item->submenu = menu;
-		curritem->prev = NULL;
+		menu->caller = slice;
+		slice->submenu = menu;
+		currslice->prev = NULL;
 	}
 
-	prevmenu->nitems++;
+	prevmenu->nslices++;
 
 	return rootmenu;
 }
 
-/* create menus and items from the stdin */
+/* create menus and slices from the stdin */
 static struct Menu *
 parsestdin(void)
 {
@@ -557,74 +519,95 @@ loadicon(const char *file, int size)
 	return icon;
 }
 
-/* setup the size of a menu and the position of its items */
+/* setup the size of a menu and the position of its slices */
 static void
-setupitems(struct Menu *menu)
+setupslices(struct Menu *menu)
 {
 	XGlyphInfo ext;
-	struct Item *item;
+	struct Slice *slice;
 	double anglerad;    /* angle in radians */
 	unsigned n = 0;
 	int angle = 0;
 
-	menu->halfslice = (360 * 64) / (menu->nitems * 2);
-	for (item = menu->list; item != NULL; item = item->next) {
+	menu->halfslice = (360 * 64) / (menu->nslices * 2);
+	for (slice = menu->list; slice != NULL; slice = slice->next) {
 		n++;
 
-		item->angle1 = angle - menu->halfslice;
-		if (item->angle1 < 0)
-			item->angle1 += 360 * 64;
-		item->angle2 = menu->halfslice * 2;
+		slice->angle1 = angle - menu->halfslice;
+		if (slice->angle1 < 0)
+			slice->angle1 += 360 * 64;
+		slice->angle2 = menu->halfslice * 2;
 
-		/* get length of item->label rendered in the font */
-		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
-		                   item->labellen, &ext);
+		/* get length of slice->label rendered in the font */
+		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)slice->label,
+		                   slice->labellen, &ext);
 
 		/* anglerad is now the angle in radians of the middle of the slice */
 		anglerad = (angle * M_PI) / (180 * 64);
 
-		/* get position of item's label */
-		item->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (ext.width / 2);
-		item->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad)) + (dc.font->ascent / 2);
+		/* get position of slice's label */
+		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (ext.width / 2);
+		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad)) + (dc.font->ascent / 2);
 
 		/* get position of submenu */
-		item->x = pie.radius + (pie.diameter * (cos(anglerad) * 0.9));
-		item->y = pie.radius - (pie.diameter * (sin(anglerad) * 0.9));
+		slice->x = pie.radius + (pie.diameter * (cos(anglerad) * 0.9));
+		slice->y = pie.radius - (pie.diameter * (sin(anglerad) * 0.9));
+
+		/* create icon */
+		if (slice->file != NULL) {
+			slice->icon = loadicon(slice->file, pie.iconsize);
+			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) *
+			0.7)) - pie.iconsize / 2;
+			slice->icony = pie.radius - (pie.radius * (sin(anglerad) *
+			0.7)) - pie.iconsize / 2;
+		}
 
 		/* anglerad is now the angle in radians of angle1 */
-		anglerad = (item->angle1 * M_PI) / (180 * 64);
+		anglerad = (slice->angle1 * M_PI) / (180 * 64);
 		
-		/* get position of the line segment separating slices */
-		item->linexi = pie.radius + pie.radius * (cos(anglerad) * pie.separatorbeg);
-		item->lineyi = pie.radius + pie.radius * (sin(anglerad) * pie.separatorbeg);
-		item->linexo = pie.radius + pie.radius * (cos(anglerad) * pie.separatorend);
-		item->lineyo = pie.radius + pie.radius * (sin(anglerad) * pie.separatorend);
-		if (abs(item->linexo - item->linexi) <= 2)
-			item->linexo = item->linexi;
+		/* set position of the line segment separating slices */
+		slice->linexi = pie.radius + pie.radius * (cos(anglerad) * pie.separatorbeg);
+		slice->lineyi = pie.radius + pie.radius * (sin(anglerad) * pie.separatorbeg);
+		slice->linexo = pie.radius + pie.radius * (cos(anglerad) * pie.separatorend);
+		slice->lineyo = pie.radius + pie.radius * (sin(anglerad) * pie.separatorend);
+		if (abs(slice->linexo - slice->linexi) <= 2)
+			slice->linexo = slice->linexi;
 
-		angle = (360 * 64 * n) / menu->nitems;
+		/* set position of the icon */
+
+		angle = (360 * 64 * n) / menu->nslices;
 	}
 }
 
 /* setup the position of a menu */
 static void
-setupmenupos(struct Geometry *geom, struct Menu *menu)
+setupmenupos(struct Menu *menu)
 {
+	Window w1, w2;  /* unused variables */
+	int a, b;       /* unused variables */
+	unsigned mask;  /* unused variable */
 	int x, y;
+	int cursx, cursy;
 
-	x = (menu->parent == NULL) ? geom->cursx : menu->parent->x + menu->caller->x;
-	y = (menu->parent == NULL) ? geom->cursy : menu->parent->y + menu->caller->y;
+	if (menu->parent == NULL) {
+		XQueryPointer(dpy, rootwin, &w1, &w2, &cursx, &cursy, &a, &b, &mask);
+		x = cursx;
+		y = cursy;
+	} else {
+		x = menu->parent->x + menu->caller->x;
+		y = menu->parent->y + menu->caller->y;
+	}
 
 	if (x < pie.radius)
 		menu->x = 0;
-	else if (geom->screenw - x >= pie.radius)
+	else if (DisplayWidth(dpy, screen) - x >= pie.radius)
 		menu->x = x - pie.radius;
 	else
 		menu->x = x - pie.diameter;
 
 	if (y < pie.radius)
 		menu->y = 0;
-	else if (geom->screenh - y >= pie.radius)
+	else if (DisplayHeight(dpy, screen) - y >= pie.radius)
 		menu->y = y - pie.radius;
 	else
 		menu->y = y - pie.diameter;
@@ -633,39 +616,42 @@ setupmenupos(struct Geometry *geom, struct Menu *menu)
 
 /* recursivelly setup menu configuration and its pixmap */
 static void
-setupmenu(struct Geometry *geom, struct Menu *menu, XClassHint *classh)
+setupmenu(struct Menu *menu)
 {
-	struct Item *item;
+	struct Slice *slice;
 	XWindowChanges changes;
 	XSizeHints sizeh;
+	XClassHint classh = {PROGNAME, PROGNAME};
 
-	/* setup size and position of menus */
-	setupmenupos(geom, menu);
-	setupitems(menu);
+	/* setup slices of the menu */
+	setupslices(menu);
+
+	/* setup position of menus */
+	setupmenupos(menu);
 
 	/* update menu geometry */
-	changes.border_width = geom->border;
-	changes.height = menu->h;
-	changes.width = menu->w;
+	changes.border_width = pie.border;
+	changes.height = pie.diameter;
+	changes.width = pie.diameter;
 	changes.x = menu->x;
 	changes.y = menu->y;
 	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
 
 	/* set window manager hints */
 	sizeh.flags = PMaxSize | PMinSize;
-	sizeh.min_width = sizeh.max_width = menu->w;
-	sizeh.min_height = sizeh.max_height = menu->h;
-	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, classh);
+	sizeh.min_width = sizeh.max_width = pie.diameter;
+	sizeh.min_height = sizeh.max_height = pie.diameter;
+	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
 
 	/* create pixmap and XftDraw */
-	menu->pixmap = XCreatePixmap(dpy, menu->win, menu->w, menu->h,
+	menu->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter,
 	                             DefaultDepth(dpy, screen));
 	menu->draw = XftDrawCreate(dpy, menu->pixmap, visual, colormap);
 
 	/* calculate positions of submenus */
-	for (item = menu->list; item != NULL; item = item->next) {
-		if (item->submenu != NULL)
-			setupmenu(geom, item->submenu, classh);
+	for (slice = menu->list; slice != NULL; slice = slice->next) {
+		if (slice->submenu != NULL)
+			setupmenu(slice->submenu);
 	}
 }
 
@@ -715,13 +701,14 @@ getmenu(struct Menu *currmenu, Window win)
 	return NULL;
 }
 
-/* get item of given menu and position */
-static struct Item *
-getitem(struct Menu *menu, int x, int y)
+/* get slice of given menu and position */
+static struct Slice *
+getslice(struct Menu *menu, int x, int y)
 {
-	struct Item *item;
+	struct Slice *slice;
 	double phi;
 	int angle;
+	int r;
 
 	if (menu == NULL)
 		return NULL;
@@ -730,6 +717,11 @@ getitem(struct Menu *menu, int x, int y)
 	y -= pie.radius;
 	y = -y;
 
+	/* if the cursor is in the middle circle, it is in no slice */
+	r = sqrt(x * x + y * y);
+	if (r <= pie.radius * pie.separatorbeg)
+		return NULL;
+
 	phi = atan2(y, x);
 	if (y < 0)
 		phi += 2 * M_PI;
@@ -737,9 +729,9 @@ getitem(struct Menu *menu, int x, int y)
 
 	if (angle < menu->halfslice)
 		return menu->list;
-	for (item = menu->list; item != NULL; item = item->next)
-		if (angle >= item->angle1 && angle < item->angle1 + item->angle2)
-			return item;
+	for (slice = menu->list; slice != NULL; slice = slice->next)
+		if (angle >= slice->angle1 && angle < slice->angle1 + slice->angle2)
+			return slice;
 
 	return NULL;
 }
@@ -796,35 +788,40 @@ mapmenu(struct Menu *currmenu)
 	prevmenu = currmenu;
 }
 
-/* draw regular item */
+/* draw regular slice */
 static void
-drawitem(struct Menu *menu, struct Item *item, XftColor *color)
+drawslice(struct Menu *menu, struct Slice *slice, XftColor *color)
 {
+	if (slice->file != NULL) {      /* if there is an icon, draw it */
+		imlib_context_set_drawable(menu->pixmap);
+		imlib_context_set_image(slice->icon);
+		imlib_render_image_on_drawable(slice->iconx, slice->icony);
+	} else {                        /* otherwise, draw the label */
 	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-                      item->labelx, item->labely, item->label, item->labellen);
+                      slice->labelx, slice->labely, slice->label, slice->labellen);
+	}
 
-	/* draw icon */
-	// if (item->file != NULL) {
-	// 	x = IMGPADDING / 2;
-	// 	y = item->y + (item->h - dc.font->height) / 2;
-	// 	imlib_context_set_drawable(menu->pixmap);
-	// 	imlib_context_set_image(item->icon);
-	// 	imlib_render_image_on_drawable(x, y);
-	// }
+	/* draw separator */
+	XSetForeground(dpy, dc.gc, dc.separator.pixel);
+	XDrawLine(dpy, menu->pixmap, dc.gc,
+	          slice->linexi, slice->lineyi,
+	          slice->linexo, slice->lineyo);
 }
 
-/* draw items of the current menu and of its ancestors */
+/* draw slices of the current menu and of its ancestors */
 static void
 drawmenu(struct Menu *currmenu)
 {
 	struct Menu *menu;
-	struct Item *item;
+	struct Slice *slice;
 	XftColor *color;
 
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
-		for (item = menu->list; item != NULL; item = item->next) {
-			if (item == menu->selected && item->label != NULL)
+
+		/* draw slice background */
+		for (slice = menu->list; slice != NULL; slice = slice->next) {
+			if (slice == menu->selected && slice->label != NULL)
 				color = dc.selected;
 			else
 				color = dc.normal;
@@ -832,67 +829,70 @@ drawmenu(struct Menu *currmenu)
 			XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
 			XFillArc(dpy, menu->pixmap, dc.gc, 0, 0,
 			         pie.diameter, pie.diameter,
-			         item->angle1, item->angle2);
+			         slice->angle1, slice->angle2);
 		}
 
-		for (item = menu->list; item != NULL; item = item->next) {
-			if (item == menu->selected && item->label != NULL)
+		/* draw slice foreground */
+		for (slice = menu->list; slice != NULL; slice = slice->next) {
+			if (slice == menu->selected && slice->label != NULL)
 				color = dc.selected;
 			else
 				color = dc.normal;
 
-			drawitem(menu, item, color);
-
-			XSetForeground(dpy, dc.gc, dc.separator.pixel);
-			XDrawLine(dpy, menu->pixmap, dc.gc,
-			          item->linexi, item->lineyi,
-			          item->linexo, item->lineyo);
+			drawslice(menu, slice, color);
 		}
 
+		/* draw inner circle */
+		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+		XFillArc(dpy, menu->pixmap, dc.gc,
+		         pie.innercirclex, pie.innercircley,
+		         pie.innercirclediameter, pie.innercirclediameter,
+		         0, 360 * 64);
+
 		XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, 0,
-			      menu->w, menu->h, 0, 0);
+			      pie.diameter, pie.diameter, 0, 0);
 	}
 }
 
-/* cycle through the items; non-zero direction is next, zero is prev */
-static struct Item *
-itemcycle(struct Menu *currmenu, int direction)
+/* cycle through the slices; non-zero direction is next, zero is prev */
+static struct Slice *
+slicecycle(struct Menu *currmenu, int direction)
 {
-	struct Item *item;
-	struct Item *lastitem;
+	struct Slice *slice;
+	struct Slice *lastslice;
 
-	item = NULL;
+	slice = NULL;
 
 	if (direction == ITEMNEXT) {
 		if (currmenu->selected == NULL)
-			item = currmenu->list;
+			slice = currmenu->list;
 		else if (currmenu->selected->next != NULL)
-			item = currmenu->selected->next;
+			slice = currmenu->selected->next;
 
-		while (item != NULL && item->label == NULL)
-			item = item->next;
+		while (slice != NULL && slice->label == NULL)
+			slice = slice->next;
 
-		if (item == NULL)
-			item = currmenu->list;
+		if (slice == NULL)
+			slice = currmenu->list;
 	} else {
-		for (lastitem = currmenu->list;
-		     lastitem != NULL && lastitem->next != NULL;
-		     lastitem = lastitem->next)
+		for (lastslice = currmenu->list;
+		     lastslice != NULL && lastslice->next != NULL;
+		     lastslice = lastslice->next)
 			;
 
 		if (currmenu->selected == NULL)
-			item = lastitem;
+			slice = lastslice;
 		else if (currmenu->selected->prev != NULL)
-			item = currmenu->selected->prev;
+			slice = currmenu->selected->prev;
 
-		while (item != NULL && item->label == NULL)
-			item = item->prev;
+		while (slice != NULL && slice->label == NULL)
+			slice = slice->prev;
 
-		if (item == NULL)
-			item = lastitem;
+		if (slice == NULL)
+			slice = lastslice;
 	}
 
-	return item;
+	return slice;
 }
 
 /* run event loop */
@@ -901,8 +901,8 @@ run(struct Menu *currmenu)
 {
 	struct Menu *rootmenu;
 	struct Menu *menu;
-	struct Item *item;
-	struct Item *previtem = NULL;
+	struct Slice *slice;
+	struct Slice *prevslice = NULL;
 	KeySym ksym;
 	XEvent ev;
 
@@ -934,31 +934,32 @@ run(struct Menu *currmenu)
 				currmenu = currmenu->parent;
 				mapmenu(currmenu);
 			}
-			previtem = NULL;
+			prevslice = NULL;
 			currmenu->selected = NULL;
 			drawmenu(currmenu);
 			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
-			item = getitem(menu, ev.xbutton.x, ev.xbutton.y);
-			if (menu == NULL || item == NULL || previtem == item)
-				break;
-			previtem = item;
-			menu->selected = item;
+			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+			prevslice = slice;
+			if (menu == NULL || slice == NULL)
+				menu->selected = NULL;
+			else
+				menu->selected = slice;
 			drawmenu(currmenu);
 			break;
 		case ButtonRelease:
 			menu = getmenu(currmenu, ev.xbutton.window);
-			item = getitem(menu, ev.xbutton.x, ev.xbutton.y);
-			if (menu == NULL || item == NULL)
-				break;
-selectitem:
-			if (item->label == NULL)
+			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+			if (menu == NULL || slice == NULL)
+				return;
+selectslice:
+			if (slice->label == NULL)
 				break;  /* ignore separators */
-			if (item->submenu != NULL) {
-				currmenu = item->submenu;
+			if (slice->submenu != NULL) {
+				currmenu = slice->submenu;
 			} else {
-				printf("%s\n", item->output);
+				printf("%s\n", slice->output);
 				return;
 			}
 			mapmenu(currmenu);
@@ -983,23 +984,23 @@ selectitem:
 				ksym = XK_ISO_Left_Tab;
 
 			/* cycle through menu */
-			item = NULL;
-			if (ksym == XK_ISO_Left_Tab || ksym == XK_Up) {
-				item = itemcycle(currmenu, ITEMPREV);
-			} else if (ksym == XK_Tab || ksym == XK_Down) {
-				item = itemcycle(currmenu, ITEMNEXT);
+			slice = NULL;
+			if (ksym == XK_Tab) {
+				slice = slicecycle(currmenu, ITEMPREV);
+			} else if (ksym == XK_ISO_Left_Tab) {
+				slice = slicecycle(currmenu, ITEMNEXT);
 			} else if ((ksym == XK_Return || ksym == XK_Right) &&
 			           currmenu->selected != NULL) {
-				item = currmenu->selected;
-				goto selectitem;
+				slice = currmenu->selected;
+				goto selectslice;
 			} else if ((ksym == XK_Escape || ksym == XK_Left) &&
 			           currmenu->parent != NULL) {
-				item = currmenu->parent->selected;
+				slice = currmenu->parent->selected;
 				currmenu = currmenu->parent;
 				mapmenu(currmenu);
 			} else
 				break;
-			currmenu->selected = item;
+			currmenu->selected = slice;
 			drawmenu(currmenu);
 			break;
 		case ConfigureNotify:
@@ -1009,14 +1010,6 @@ selectitem:
 			menu->x = ev.xconfigure.x;
 			menu->y = ev.xconfigure.y;
 			break;
-		case ClientMessage:
-			/* user closed window */
-			menu = getmenu(currmenu, ev.xclient.window);
-			if (menu->parent == NULL)
-				return;     /* closing the root menu closes the program */
-			currmenu = menu->parent;
-			mapmenu(currmenu);
-			break;
 		}
 	}
 }
@@ -1025,14 +1018,14 @@ selectitem:
 static void
 freemenu(struct Menu *menu)
 {
-	struct Item *item;
-	struct Item *tmp;
+	struct Slice *slice;
+	struct Slice *tmp;
 
-	item = menu->list;
-	while (item != NULL) {
-		if (item->submenu != NULL)
-			freemenu(item->submenu);
-		tmp = item;
+	slice = menu->list;
+	while (slice != NULL) {
+		if (slice->submenu != NULL)
+			freemenu(slice->submenu);
+		tmp = slice;
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
@@ -1043,7 +1036,7 @@ freemenu(struct Menu *menu)
 				imlib_free_image();
 			}
 		}
-		item = item->next;
+		slice = slice->next;
 		free(tmp);
 	}
 

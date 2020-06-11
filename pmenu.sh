@@ -1,13 +1,10 @@
 #!/bin/sh
 
-cat <<EOF | pmenu | sh &
-Applications
-	Web Browser	firefox
-	Image editor	gimp
-	Word processor	libreoffice
-xterm			xterm
-urxvt			urxvt
-st				st
-Shutdown		poweroff
-Reboot			reboot
+cat <<EOF | ./pmenu
+Browser		firefox
+xterm		xterm
+urxvt		urxvt
+st		st
+Halt		poweroff
+Reboot		reboot
 EOF
