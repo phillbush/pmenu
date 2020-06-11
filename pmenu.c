@@ -86,9 +86,16 @@ struct Pie {
 	GC gc;
 	Drawable clip;
 	Drawable bounding;
+
 	int diameter;
 	int radius;
 	int border;
+
+	int innercirclex;
+	int innercircley;
+
+	double separatorbeg;
+	double separatorend;
 };
 
 /* functions declarations */
@@ -299,7 +306,7 @@ calcgeom(struct Geometry *geom)
 	geom->separator = separator_pixels;
 }
 
-/* setup bitmap pie */
+/* setup pie */
 void
 setuppie(void)
 {
@@ -308,9 +315,15 @@ setuppie(void)
 	unsigned x, y;
 	int fulldiameter;       /* diameter + border */
 
+	/* set pie geometry */
 	pie.border = border_pixels;
 	pie.diameter = diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
+
+	/* set the  */
+	pie.separatorbeg = separatorbeg;
+	pie.separatorend = separatorend;
+
 	fulldiameter = pie.diameter + (pie.border * 2);
 
 	x = y = (pie.diameter + 1) / 2;
@@ -582,10 +595,10 @@ setupitems(struct Menu *menu)
 		anglerad = (item->angle1 * M_PI) / (180 * 64);
 		
 		/* get position of the line segment separating slices */
-		item->linexi = pie.radius + pie.radius * (cos(anglerad) * 0.1);
-		item->lineyi = pie.radius + pie.radius * (sin(anglerad) * 0.1);
-		item->linexo = pie.radius + pie.radius * (cos(anglerad) * 0.4);
-		item->lineyo = pie.radius + pie.radius * (sin(anglerad) * 0.4);
+		item->linexi = pie.radius + pie.radius * (cos(anglerad) * pie.separatorbeg);
+		item->lineyi = pie.radius + pie.radius * (sin(anglerad) * pie.separatorbeg);
+		item->linexo = pie.radius + pie.radius * (cos(anglerad) * pie.separatorend);
+		item->lineyo = pie.radius + pie.radius * (sin(anglerad) * pie.separatorend);
 		if (abs(item->linexo - item->linexi) <= 2)
 			item->linexo = item->linexi;
 
