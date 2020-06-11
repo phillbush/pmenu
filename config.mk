@@ -13,7 +13,7 @@ X11LIB = /usr/X11R6/lib
 
 FREETYPEINC = /usr/include/freetype2
 # OpenBSD (uncomment)
-FREETYPEINC = ${X11INC}/freetype2
+#FREETYPEINC = ${X11INC}/freetype2
 
 # includes and libs
 INCS = -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}

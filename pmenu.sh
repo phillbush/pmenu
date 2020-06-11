@@ -1,6 +1,6 @@
 #!/bin/sh
 
-cat <<EOF | ./pmenu
+cat <<EOF | pmenu | sh &
 Applications
 	Web Browser	firefox
 	Image editor	gimp
