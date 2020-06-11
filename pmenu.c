@@ -205,18 +205,15 @@ getresources(void)
 
 	xdb = XrmGetStringDatabase(xrm);
 
+	if (XrmGetResource(xdb, "pmenu.diameterWidth", "*", &type, &xval) == True)
+		if ((n = strtol(xval.addr, NULL, 10)) > 0)
+			diameter_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			border_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			separator_pixels = n;
-	if (XrmGetResource(xdb, "pmenu.padding", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			padding_pixels = n;
-	if (XrmGetResource(xdb, "pmenu.width", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			width_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
 		background_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
@@ -473,11 +470,14 @@ parsestdin(void)
 		s = level + buf;
 		label = strtok(s, "\t\n");
 
+		if (label == NULL)
+			errx(1, "empty item");
+
 		/* get the filename */
 		file = NULL;
 		if (label != NULL && strncmp(label, "IMG:", 4) == 0) {
 			file = label + 4;
-			label = strtok(NULL, "\t\n");
+			label = NULL;
 		}
 
 		/* get the output */
@@ -821,7 +821,7 @@ drawmenu(struct Menu *currmenu)
 
 		/* draw slice background */
 		for (slice = menu->list; slice != NULL; slice = slice->next) {
-			if (slice == menu->selected && slice->label != NULL)
+			if (slice == menu->selected)
 				color = dc.selected;
 			else
 				color = dc.normal;
@@ -834,7 +834,7 @@ drawmenu(struct Menu *currmenu)
 
 		/* draw slice foreground */
 		for (slice = menu->list; slice != NULL; slice = slice->next) {
-			if (slice == menu->selected && slice->label != NULL)
+			if (slice == menu->selected)
 				color = dc.selected;
 			else
 				color = dc.normal;
@@ -869,9 +869,6 @@ slicecycle(struct Menu *currmenu, int direction)
 		else if (currmenu->selected->next != NULL)
 			slice = currmenu->selected->next;
 
-		while (slice != NULL && slice->label == NULL)
-			slice = slice->next;
-
 		if (slice == NULL)
 			slice = currmenu->list;
 	} else {
@@ -884,9 +881,6 @@ slicecycle(struct Menu *currmenu, int direction)
 			slice = lastslice;
 		else if (currmenu->selected->prev != NULL)
 			slice = currmenu->selected->prev;
-
-		while (slice != NULL && slice->label == NULL)
-			slice = slice->prev;
 
 		if (slice == NULL)
 			slice = lastslice;
@@ -954,8 +948,6 @@ run(struct Menu *currmenu)
 			if (menu == NULL || slice == NULL)
 				return;
 selectslice:
-			if (slice->label == NULL)
-				break;  /* ignore separators */
 			if (slice->submenu != NULL) {
 				currmenu = slice->submenu;
 			} else {
@@ -989,11 +981,11 @@ selectslice:
 				slice = slicecycle(currmenu, ITEMPREV);
 			} else if (ksym == XK_ISO_Left_Tab) {
 				slice = slicecycle(currmenu, ITEMNEXT);
-			} else if ((ksym == XK_Return || ksym == XK_Right) &&
+			} else if ((ksym == XK_Return) &&
 			           currmenu->selected != NULL) {
 				slice = currmenu->selected;
 				goto selectslice;
-			} else if ((ksym == XK_Escape || ksym == XK_Left) &&
+			} else if ((ksym == XK_Escape) &&
 			           currmenu->parent != NULL) {
 				slice = currmenu->parent->selected;
 				currmenu = currmenu->parent;
