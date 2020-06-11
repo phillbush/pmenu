@@ -12,7 +12,7 @@
 #include <X11/extensions/shape.h>
 #include <Imlib2.h>
 
-#define PROGNAME "xmenu"
+#define PROGNAME "pmenu"
 #define ITEMPREV 0
 #define ITEMNEXT 1
 #define IMGPADDING 8
@@ -52,6 +52,11 @@ struct Item {
 	char *file;             /* filename of the icon */
 	int angle1, angle2;
 	int x, y;
+
+	/* line segment separator */
+	int linexi, lineyi;     /* position of the inner point of the line segment */
+	int linexo, lineyo;     /* position of the outer point of the line segment */
+
 	int h;
 	int labelx, labely;     /* position of the label */
 	size_t labellen;        /* strlen(label) */
@@ -126,7 +131,7 @@ static struct Pie pie;
 
 #include "config.h"
 
-/* xmenu: generate menu from stdin and print selected entry to stdout */
+/* pmenu: generate a pie menu from stdin and print selected entry to stdout */
 int
 main(int argc, char *argv[])
 {
@@ -213,31 +218,31 @@ getresources(void)
 
 	xdb = XrmGetStringDatabase(xrm);
 
-	if (XrmGetResource(xdb, "xmenu.borderWidth", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			border_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.separatorWidth", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			separator_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.padding", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.padding", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			padding_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.width", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.width", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
 			width_pixels = n;
-	if (XrmGetResource(xdb, "xmenu.background", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
 		background_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.foreground", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
 		foreground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.selbackground", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.selbackground", "*", &type, &xval) == True)
 		selbackground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.selforeground", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.selforeground", "*", &type, &xval) == True)
 		selforeground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.separator", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.separator", "*", &type, &xval) == True)
 		separator_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.border", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.border", "*", &type, &xval) == True)
 		border_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "xmenu.font", "*", &type, &xval) == True)
+	if (XrmGetResource(xdb, "pmenu.font", "*", &type, &xval) == True)
 		font = strdup(xval.addr);
 
 	XrmDestroyDatabase(xdb);
@@ -256,6 +261,7 @@ static void
 setupdc(void)
 {
 	XGCValues values;
+	unsigned long valuemask;
 
 	/* get color pixels */
 	getcolor(background_color,    &dc.normal[ColorBG]);
@@ -271,7 +277,9 @@ setupdc(void)
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
-	dc.gc = XCreateGC(dpy, rootwin, GCArcMode, &values);
+	values.line_width = separator_pixels;
+	valuemask = GCLineWidth | GCArcMode;
+	dc.gc = XCreateGC(dpy, rootwin, valuemask, &values);
 }
 
 /* calculate menu and screen geometry */
@@ -395,7 +403,7 @@ allocmenu(struct Menu *parent, struct Item *list, unsigned level)
 	swa.border_pixel = dc.border.pixel;
 	swa.save_under = True;  /* pop-up windows should save_under*/
 	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
-	               | PointerMotionMask | LeaveWindowMask;
+	               | PointerMotionMask | EnterWindowMask | LeaveWindowMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, 0,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel |
@@ -559,15 +567,27 @@ setupitems(struct Menu *menu)
 		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)item->label,
 		                   item->labellen, &ext);
 
+		/* anglerad is now the angle in radians of the middle of the slice */
 		anglerad = (angle * M_PI) / (180 * 64);
 
 		/* get position of item's label */
-		item->labelx = pie.radius + ((pie.radius)/2 * cos(anglerad)) - (ext.xOff / 2);
-		item->labely = pie.radius - ((pie.radius)/2 * sin(anglerad)) + (dc.font->ascent / 2);
+		item->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (ext.width / 2);
+		item->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad)) + (dc.font->ascent / 2);
 
 		/* get position of submenu */
-		item->x = pie.radius + (pie.radius * 2 * cos(anglerad));
-		item->y = pie.radius - (pie.radius * 2 * sin(anglerad));
+		item->x = pie.radius + (pie.diameter * (cos(anglerad) * 0.9));
+		item->y = pie.radius - (pie.diameter * (sin(anglerad) * 0.9));
+
+		/* anglerad is now the angle in radians of angle1 */
+		anglerad = (item->angle1 * M_PI) / (180 * 64);
+		
+		/* get position of the line segment separating slices */
+		item->linexi = pie.radius + pie.radius * (cos(anglerad) * 0.1);
+		item->lineyi = pie.radius + pie.radius * (sin(anglerad) * 0.1);
+		item->linexo = pie.radius + pie.radius * (cos(anglerad) * 0.4);
+		item->lineyo = pie.radius + pie.radius * (sin(anglerad) * 0.4);
+		if (abs(item->linexo - item->linexi) <= 2)
+			item->linexo = item->linexi;
 
 		angle = (360 * 64 * n) / menu->nitems;
 	}
@@ -809,6 +829,11 @@ drawmenu(struct Menu *currmenu)
 				color = dc.normal;
 
 			drawitem(menu, item, color);
+
+			XSetForeground(dpy, dc.gc, dc.separator.pixel);
+			XDrawLine(dpy, menu->pixmap, dc.gc,
+			          item->linexi, item->lineyi,
+			          item->linexo, item->lineyo);
 		}
 
 		XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, 0,
@@ -880,6 +905,14 @@ run(struct Menu *currmenu)
 			if (ev.xexpose.count == 0)
 				drawmenu(currmenu);
 			break;
+		case EnterNotify:
+			menu = getmenu(currmenu, ev.xcrossing.window);
+			if (menu == NULL)
+				break;
+			mapmenu(currmenu);
+			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			drawmenu(currmenu);
+			break;
 		case LeaveNotify:
 			menu = getmenu(currmenu, ev.xcrossing.window);
 			if (menu == NULL)
@@ -887,7 +920,6 @@ run(struct Menu *currmenu)
 			if (menu != rootmenu && menu == currmenu) {
 				currmenu = currmenu->parent;
 				mapmenu(currmenu);
-				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 			}
 			previtem = NULL;
 			currmenu->selected = NULL;
@@ -929,7 +961,7 @@ selectitem:
 		case KeyPress:
 			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
 
-			/* esc closes xmenu when current menu is the root menu */
+			/* esc closes pmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu->parent == NULL)
 				return;
 
@@ -1030,6 +1062,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: xmenu [-w] [title]\n");
+	(void)fprintf(stderr, "usage: pmenu [title]\n");
 	exit(1);
 }
