@@ -557,9 +557,9 @@ setupslices(struct Menu *menu)
 		if (slice->file != NULL) {
 			slice->icon = loadicon(slice->file, pie.iconsize);
 			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) *
-			0.7)) - pie.iconsize / 2;
+			0.6)) - pie.iconsize / 2;
 			slice->icony = pie.radius - (pie.radius * (sin(anglerad) *
-			0.7)) - pie.iconsize / 2;
+			0.6)) - pie.iconsize / 2;
 		}
 
 		/* anglerad is now the angle in radians of angle1 */
