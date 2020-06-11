@@ -1,0 +1,139 @@
+.TH XMENU 1
+.SH NAME
+xmenu \- menu utility for X
+.SH SYNOPSIS
+.B xmenu
+.RB [ \-w ]
+.RI [ title ]
+.SH DESCRIPTION
+.B xmenu
+is a menu for X,
+it reads a list of newline-separated items from stdin,
+shows a menu for the user to select one of the items,
+and outputs the item selected to stdout.
+.PP
+The options are as follows:
+.TP
+.B -w
+Asks the window manager to draw a border around the menus.
+This option may be buggy in some window managers, specially tiled ones.
+.PP
+Each item read from stdin has the following format:
+.IP
+.EX
+ITEM := [TABS] [[IMAGE TABS] LABEL [TABS OUTPUT]] NEWLINE
+.EE
+.PP
+That means that each item is composed by
+tabs, followed by an optional image specification, followed by tabs
+followed by a label, followed by more tabs, followed by an output,
+and ended by a newline.  Brackets group optional elements.
+.IP
+The initial tabs indicate the menu hierarchy:
+items indented with a tab is shown in a submenu of the preceding item not indented.
+An item without initial tabs is a top-level item.
+.IP
+The image is a string of the form "IMG:/path/to/image.png".
+It specifies a image to be shown as icon at the left of the entry.
+.IP
+The label is the string that will be shown as a item in the menu.
+An item without label is considered a separator and is drawn as a thin line in the menu
+separating the item above from the item below.
+.IP
+The output is the string that will be output after selecting the item.
+If an item does not have an output, its label is used as its output.
+.IP
+The newline terminates the item specification.
+.PP
+If the argument
+.I title
+is given, the title of the menu window is set to it.
+.SH USAGE
+.B xmenu
+is controlled by the mouse,
+but can also be controlled by the keyboard.
+Items can be selected using the arrow keys,
+Tab (with and without Shift),
+Enter and Esc.
+.TP
+.BR Down ", " Tab
+Cycle through the items in the regular direction.
+.TP
+.BR Up ", " Shift-Tab
+Cycle through the items in the reverse direction.
+.TP
+.BR Right ", " Enter
+Select the highlighted item.
+.TP
+.B Left
+Go to the menu above.
+.TP
+.B Esc
+Go to the menu above or exit xmenu.
+.SH RESOURCES
+.B
+xmenu
+understands the following X resources.
+.TP
+.B xmenu.font
+The font in which the labels should be drawn.
+.TP
+.B xmenu.background
+The background color of non-selected items in the menu.
+.TP
+.B xmenu.foreground
+The color of the label text of non-selected items in the menu.
+.TP
+.B xmenu.selbackground
+The background color of selected items in the menu.
+.TP
+.B xmenu.selforeground
+The color of the label text of selected items in the menu.
+.TP
+.B xmenu.border
+The color of the border around the menu.
+.TP
+.B xmenu.separator
+The color of the separator between items in the menu.
+.TP
+.B xmenu.width
+The minimum width, in pixels, of the items in the menu.
+.TP
+.B xmenu.padding
+The size in pixels of the padding around the label text in items in the menu.
+.TP
+.B xmenu.borderWidth
+The size in pixels of the border around the menu.
+.TP
+.B xmenu.separatorWidth
+The size in pixels of the item separator.
+
+.SH EXAMPLES
+The following script illustrates the use of
+.BR xmenu .
+The output is redirected to
+.IR sh (1),
+creating a command to be run by the shell.
+.IP
+.EX
+#!/bin/sh
+
+cat <<EOF | xmenu | sh &
+Applications
+	IMG:./web.png	Web Browser	firefox
+	IMG:./gimp.png	Image editor	gimp
+Terminal (xterm)				xterm
+Terminal (urxvt)				urxvt
+Terminal (st)					st
+
+Shutdown						poweroff
+Reboot						reboot
+EOF
+.EE
+.PP
+For example, by selecting \(lqApplications\(rq, a new menu will appear.
+Selecting \(lqWeb Browser\(rq in the new menu opens firefox.
+.SH SEE ALSO
+.IR dmenu (1),
+.IR 9menu (1),
+.IR thingmenu (1)
