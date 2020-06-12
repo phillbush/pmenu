@@ -98,7 +98,7 @@ static void setuppie(void);
 static struct Slice *allocslice(const char *label, const char *output, char *file);
 static struct Menu *allocmenu(struct Menu *parent, struct Slice *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
-static Imlib_Image loadicon(const char *file, int size);
+static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
 static struct Menu *parsestdin(void);
 static void setupslices(struct Menu *menu);
 static void setupmenupos(struct Menu *menu);
@@ -498,14 +498,13 @@ parsestdin(void)
 	return rootmenu;
 }
 
-/* load and scale icon */
+/* load image from file and scale it to size; return the image and its size */
 static Imlib_Image
-loadicon(const char *file, int size)
+loadicon(const char *file, int size, int *width_ret, int *height_ret)
 {
 	Imlib_Image icon;
 	int width;
 	int height;
-	int imgsize;
 
 	icon = imlib_load_image(file);
 	if (icon == NULL)
@@ -515,9 +514,17 @@ loadicon(const char *file, int size)
 
 	width = imlib_image_get_width();
 	height = imlib_image_get_height();
-	imgsize = MIN(width, height);
 
-	icon = imlib_create_cropped_scaled_image(0, 0, imgsize, imgsize, size, size);
+	if (width == MAX(width, height)) {
+		*width_ret = size;
+		*height_ret = (height * size) / width;
+	} else {
+		*width_ret = (width * size) / height;
+		*height_ret = size;
+	}
+
+	icon = imlib_create_cropped_scaled_image(0, 0, width, height,
+	                                         *width_ret, *height_ret);
 
 	return icon;
 }
@@ -558,11 +565,12 @@ setupslices(struct Menu *menu)
 
 		/* create icon */
 		if (slice->file != NULL) {
-			slice->icon = loadicon(slice->file, pie.iconsize);
-			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) *
-			0.6)) - pie.iconsize / 2;
-			slice->icony = pie.radius - (pie.radius * (sin(anglerad) *
-			0.6)) - pie.iconsize / 2;
+			int iconw, iconh;
+
+			slice->icon = loadicon(slice->file, pie.iconsize, &iconw, &iconh);
+
+			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) * 0.6)) - iconw / 2;
+			slice->icony = pie.radius - (pie.radius * (sin(anglerad) * 0.6)) - iconh / 2;
 		}
 
 		/* anglerad is now the angle in radians of angle1 */
@@ -1063,6 +1071,6 @@ cleanup(void)
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [title]\n");
+	(void)fprintf(stderr, "usage: pmenu\n");
 	exit(1);
 }
