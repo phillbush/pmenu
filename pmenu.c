@@ -484,7 +484,7 @@ parsestdin(void)
 		}
 
 		/* get the output */
-		output = strtok(NULL, "\t\n");
+		output = strtok(NULL, "\n");
 		if (output == NULL) {
 			output = label;
 		} else {
