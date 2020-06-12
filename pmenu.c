@@ -323,25 +323,28 @@ allocslice(const char *label, const char *output, char *file)
 
 	if ((slice = malloc(sizeof *slice)) == NULL)
 		err(1, "malloc");
+
 	if (label == NULL) {
 		slice->label = NULL;
-		slice->output = NULL;
 	} else {
 		if ((slice->label = strdup(label)) == NULL)
 			err(1, "strdup");
-		if (label == output) {
-			slice->output = slice->label;
-		} else {
-			if ((slice->output = strdup(output)) == NULL)
-				err(1, "strdup");
-		}
 	}
+
+	if (label == output) {
+		slice->output = slice->label;
+	} else {
+		if ((slice->output = strdup(output)) == NULL)
+			err(1, "strdup");
+	}
+
 	if (file == NULL) {
 		slice->file = NULL;
 	} else {
 		if ((slice->file = strdup(file)) == NULL)
 			err(1, "strdup");
 	}
+
 	slice->y = 0;
 	if (slice->label == NULL)
 		slice->labellen = 0;
@@ -481,7 +484,7 @@ parsestdin(void)
 		}
 
 		/* get the output */
-		output = strtok(NULL, "\n");
+		output = strtok(NULL, "\t\n");
 		if (output == NULL) {
 			output = label;
 		} else {
