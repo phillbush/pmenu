@@ -8,14 +8,10 @@ pop-up menu (that is, after selecting an option, the menu disappears).
 
 This is a experimental project based on xmenu.
 
-
-§ Features
-
 πmenu comes with the following features:
 • πmenu reads something in and prints something out, the UNIX way.
-• Submenus (some menu entries can spawn another menu).
-• Separators (menu entries can be separated by a line).
-• Icons (menu entries can be preceded by an icon image).
+• Submenus (some pie-menu slices can spawn another menu).
+• Icons (pie-menu slices can contain icon image).
 
 
 § Files
@@ -24,7 +20,7 @@ The files are:
 • ./README:     This file.
 • ./Makefile:   The makefile.
 • ./config.h:   The hardcoded default configuration for πmenu.
-• ./config.mk:  The setup for the makefile.
+• ./config.mk:  The settings for the makefile.
 • ./pmenu.1:    The manual file (man page) for πmenu.
 • ./pmenu.c:    The source code of πmenu.
 • ./pmenu.sh:   A sample script illustrating how to use πmenu.
@@ -55,10 +51,10 @@ the manual file ./pmenu.1 into ${MANPREFIX}/man1/ directory.
 πmenu receives as input a menu specification where each line is a menu
 entry.  Each line can be indented with tabs to represent nested menus.
 Each line is made out of a label and a command separated by any number
-of tabs.  Lines without labels are menu separators.
+of tabs.
 
 See the script ./pmenu.sh for an example of how to use πmenu to draw a
-simple menu with submenus and separators.
+simple pie menu.
 
 Read the manual for more information on running πmenu.
 
