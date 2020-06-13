@@ -84,8 +84,6 @@ struct Pie {
 	int innercircley;
 	int innercirclediameter;
 
-	int iconsize;
-
 	double separatorbeg;
 	double separatorend;
 };
@@ -279,7 +277,6 @@ setuppie(void)
 	pie.border = border_pixels;
 	pie.diameter = diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
-	pie.iconsize = (pie.radius + 1) / 2;
 	fulldiameter = pie.diameter + (pie.border * 2);
 
 	/* set the separator beginning and end */
@@ -565,9 +562,21 @@ setupslices(struct Menu *menu)
 
 		/* create icon */
 		if (slice->file != NULL) {
-			int iconw, iconh;
+			int maxiconsize = (pie.radius + 1) / 2;
+			double sliceanglerad;   /* intern angle of a slice */
+			int iconw, iconh;       /* icon width and height */
+			int iconsize;           /* requested icon size */
+			int x, y;
 
-			slice->icon = loadicon(slice->file, pie.iconsize, &iconw, &iconh);
+			sliceanglerad = (slice->angle2 * M_PI) / (180 * 64);
+
+			x = pie.radius * 0.5 - (pie.radius * (cos(sliceanglerad) * 0.5));
+			y = pie.radius - pie.radius + (pie.radius * (sin(sliceanglerad) * 0.5));
+
+			iconsize = sqrt(x * x + y * y);
+			iconsize = MIN(maxiconsize, iconsize);
+
+			slice->icon = loadicon(slice->file, iconsize, &iconw, &iconh);
 
 			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) * 0.6)) - iconw / 2;
 			slice->icony = pie.radius - (pie.radius * (sin(anglerad) * 0.6)) - iconh / 2;
