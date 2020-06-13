@@ -563,7 +563,7 @@ setupslices(struct Menu *menu)
 		/* create icon */
 		if (slice->file != NULL) {
 			int maxiconsize = (pie.radius + 1) / 2;
-			double sliceanglerad;   /* intern angle of a slice */
+			double sliceanglerad;   /* inner angle of a slice */
 			int iconw, iconh;       /* icon width and height */
 			int iconsize;           /* requested icon size */
 			int xdiff, ydiff;
@@ -571,7 +571,7 @@ setupslices(struct Menu *menu)
 			sliceanglerad = (slice->angle2 * M_PI) / (180 * 64);
 
 			xdiff = pie.radius * 0.5 - (pie.radius * (cos(sliceanglerad) * 0.5));
-			ydiff = (pie.radius * (sin(sliceanglerad) * 0.5));
+			ydiff = pie.radius * (sin(sliceanglerad) * 0.5);
 
 			iconsize = sqrt(xdiff * xdiff + ydiff * ydiff);
 			iconsize = MIN(maxiconsize, iconsize);
