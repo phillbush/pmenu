@@ -76,6 +76,7 @@ struct Pie {
 	Drawable clip;      /* bitmap shaping the clip region (without borders) */
 	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
 
+	int fulldiameter;   /* diameter of the pie + 2*border*/
 	int diameter;       /* diameter of the pie */
 	int radius;         /* radius of the pie */
 	int border;         /* border of the pie */
@@ -271,13 +272,12 @@ setuppie(void)
 	XGCValues values;
 	unsigned long valuemask;
 	unsigned x, y;
-	int fulldiameter;       /* diameter + border * 2 */
 
 	/* set pie geometry */
 	pie.border = border_pixels;
 	pie.diameter = diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
-	fulldiameter = pie.diameter + (pie.border * 2);
+	pie.fulldiameter = pie.diameter + (pie.border * 2);
 
 	/* set the separator beginning and end */
 	pie.separatorbeg = separatorbeg;
@@ -291,7 +291,7 @@ setuppie(void)
 
 	/* Create a simple bitmap mask (depth = 1) */
 	pie.clip = XCreatePixmap(dpy, rootwin, pie.diameter, pie.diameter, 1);
-	pie.bounding = XCreatePixmap(dpy, rootwin, fulldiameter, fulldiameter, 1);
+	pie.bounding = XCreatePixmap(dpy, rootwin, pie.fulldiameter, pie.fulldiameter, 1);
 
 	/* Create the mask GC */
 	values.background = 1;
@@ -302,14 +302,14 @@ setuppie(void)
 	/* clear the bitmap */
 	XSetForeground(dpy, pie.gc, 0);
 	XFillRectangle(dpy, pie.clip, pie.gc, 0, 0, pie.diameter, pie.diameter);
-	XFillRectangle(dpy, pie.bounding, pie.gc, 0, 0, fulldiameter, fulldiameter);
+	XFillRectangle(dpy, pie.bounding, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
 
 	/* create round shape */
 	XSetForeground(dpy, pie.gc, 1);
 	XFillArc(dpy, pie.clip, pie.gc, 0, 0,
 	         pie.diameter, pie.diameter, 0, 360*64);
 	XFillArc(dpy, pie.bounding, pie.gc, 0, 0,
-	         fulldiameter, fulldiameter, 0, 360*64);
+	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
 }
 
 /* allocate an slice */
@@ -606,32 +606,40 @@ setupmenupos(struct Menu *menu)
 	Window w1, w2;  /* unused variables */
 	int a, b;       /* unused variables */
 	unsigned mask;  /* unused variable */
-	int x, y;
 	int cursx, cursy;
+	int screenw, screenh;
 
 	if (menu->parent == NULL) {
 		XQueryPointer(dpy, rootwin, &w1, &w2, &cursx, &cursy, &a, &b, &mask);
-		x = cursx;
-		y = cursy;
 	} else {
-		x = menu->parent->x + menu->caller->x;
-		y = menu->parent->y + menu->caller->y;
+		Bool ret;
+		ret = XTranslateCoordinates(dpy, menu->parent->win, rootwin,
+		                            menu->caller->x, menu->caller->y,
+		                            &cursx, &cursy, &w1);
+
+		if (ret == False)
+			errx(EXIT_FAILURE, "menus are on different screens");
 	}
 
-	if (x < pie.radius)
-		menu->x = 0;
-	else if (DisplayWidth(dpy, screen) - x >= pie.radius)
-		menu->x = x - pie.radius;
-	else
-		menu->x = x - pie.diameter;
+	screenw = DisplayWidth(dpy, screen);
+	screenh = DisplayHeight(dpy, screen);
 
-	if (y < pie.radius)
-		menu->y = 0;
-	else if (DisplayHeight(dpy, screen) - y >= pie.radius)
-		menu->y = y - pie.radius;
-	else
-		menu->y = y - pie.diameter;
-	
+	menu->x = 0;
+	menu->y = 0;
+
+	if (cursx < pie.radius)
+		;
+	else if (screenw - cursx >= pie.radius)
+		menu->x = cursx - pie.radius;
+	else if (screenw >= pie.fulldiameter)
+		menu->x = screenw - pie.fulldiameter;
+
+	if (cursy < pie.radius)
+		;
+	else if (screenh - cursy >= pie.radius)
+		menu->y = cursy - pie.radius;
+	else if (screenh >= pie.fulldiameter)
+		menu->y = screenh - pie.fulldiameter;
 }
 
 /* recursivelly setup menu configuration and its pixmap */
