@@ -526,7 +526,7 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 	return icon;
 }
 
-/* setup the size of a menu and the position of its slices */
+/* setup position of and content of menu's slices */
 static void
 setupslices(struct Menu *menu)
 {
@@ -697,7 +697,7 @@ grabpointer(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "cannot grab keyboard");
+	errx(1, "cannot grab pointer");
 }
 
 /* try to grab keyboard, we may have to wait for another process to ungrab */
