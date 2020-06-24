@@ -6,12 +6,18 @@ to select one of the options, and outputs the option selected to stdout.
 πmenu can be controlled both via mouse and via keyboard.  The menu is a
 pop-up menu (that is, after selecting an option, the menu disappears).
 
-This is a experimental project based on xmenu.
+Here is a gif showing off πmenu in action:
+https://i.redd.it/4tw9d2xy8o451.gif
 
 πmenu comes with the following features:
 • πmenu reads something in and prints something out, the UNIX way.
 • Submenus (some pie-menu slices can spawn another menu).
 • Icons (pie-menu slices can contain icon image).
+
+Check out my other project, xclickroot[0] for an application that can
+spawn πmenu by right clicking on the root window (i.e. on the desktop).
+
+[0]: https://github.com/phillbush/xclickroot
 
 
 § Files
