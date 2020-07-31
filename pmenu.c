@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <err.h>
 #include <math.h>
 #include <stdio.h>
@@ -18,9 +19,10 @@
 #define ITEMNEXT 1
 
 /* macros */
-#define LEN(x) (sizeof (x) / sizeof (x[0]))
-#define MAX(x,y) ((x)>(y)?(x):(y))
-#define MIN(x,y) ((x)<(y)?(x):(y))
+#define LEN(x)              (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
@@ -49,7 +51,9 @@ struct DC {
 	XftColor separator;             /* color of the separator */
 
 	GC gc;                          /* graphics context */
-	XftFont *font;                  /* font */
+
+	XftFont **fonts;                /* fonts */
+	size_t nfonts;
 };
 
 /* pie slice structure */
@@ -118,6 +122,7 @@ struct Pie {
 
 /* initializers, and their helper routine */
 static void ealloccolor(const char *s, XftColor *color);
+static void parsefonts(const char *s);
 static void initmonitor(void);
 static void initresources(void);
 static void initdc(void);
@@ -131,6 +136,10 @@ static struct Menu *parsestdin(void);
 
 /* icon loader */
 static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
+
+/* text drawer, and its helper routine */
+static FcChar32 getnextutf8char(const char *s, const char **end_ret);
+static int drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text);
 
 /* menu and slice setters, and their helper routines */
 static void setupslices(struct Menu *menu);
@@ -241,6 +250,40 @@ ealloccolor(const char *s, XftColor *color)
 		errx(1, "cannot allocate color: %s", s);
 }
 
+/* parse color string */
+static void
+parsefonts(const char *s)
+{
+	const char *p;
+	char buf[1024];
+	size_t nfont = 0;
+
+	dc.nfonts = 1;
+	for (p = s; *p; p++)
+		if (*p == ',')
+			dc.nfonts++;
+
+	if ((dc.fonts = calloc(dc.nfonts, sizeof *dc.fonts)) == NULL)
+		err(1, "calloc");
+
+	p = s;
+	while (*p != '\0') {
+		size_t i;
+
+		i = 0;
+		while (isspace(*p))
+			p++;
+		while (*p != '\0' && *p != ',') {
+			buf[i++] = *p++;
+		}
+		if (*p == ',')
+			p++;
+		buf[i] = '\0';
+		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
+			errx(1, "cannot load font");
+	}
+}
+
 /* query monitor information and cursor position */
 static void
 initmonitor(void)
@@ -262,8 +305,8 @@ initmonitor(void)
 		int selmon = 0;
 
 		for (i = 0; i < nmons; i++) {
-			if (mon.cursx >= info[i].x_org && mon.cursx <= info[i].x_org + info[i].width &&
-				mon.cursy >= info[i].y_org && mon.cursy <= info[i].y_org + info[i].height) {
+			if (BETWEEN(mon.cursx, info[i].x_org, info[i].x_org + info[i].width) &&
+			    BETWEEN(mon.cursy, info[i].y_org, info[i].y_org + info[i].height)) {
 				selmon = i;
 				break;
 			}
@@ -334,9 +377,8 @@ initdc(void)
 	ealloccolor(config.separator_color,     &dc.separator);
 	ealloccolor(config.border_color,        &dc.border);
 
-	/* try to get font */
-	if ((dc.font = XftFontOpenName(dpy, screen, config.font)) == NULL)
-		errx(1, "cannot load font");
+	/* parse fonts */
+	parsefonts(config.font);
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
@@ -360,8 +402,8 @@ initpie(void)
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
 
 	/* set the separator beginning and end */
-	pie.separatorbeg = separatorbeg;
-	pie.separatorend = separatorend;
+	pie.separatorbeg = config.separatorbeg;
+	pie.separatorend = config.separatorend;
 
 	/* set the inner circle position */
 	pie.innercircley = pie.innercirclex = pie.radius - pie.radius * pie.separatorbeg;
@@ -606,15 +648,111 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 	return icon;
 }
 
+/* get next utf8 char from s return its codepoint and set next_ret to pointer to end of character */
+static FcChar32
+getnextutf8char(const char *s, const char **next_ret)
+{
+	static const unsigned char utfbyte[] = {0x80, 0x00, 0xC0, 0xE0, 0xF0};
+	static const unsigned char utfmask[] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
+	static const FcChar32 utfmin[] = {0, 0x00,  0x80,  0x800,  0x10000};
+	static const FcChar32 utfmax[] = {0, 0x7F, 0x7FF, 0xFFFF, 0x10FFFF};
+	/* 0xFFFD is the replacement character, used to represent unknown characters */
+	static const FcChar32 unknown = 0xFFFD;
+	FcChar32 ucode;         /* FcChar32 type holds 32 bits */
+	size_t usize = 0;       /* n' of bytes of the utf8 character */
+	size_t i;
+
+	*next_ret = s+1;
+
+	/* get code of first byte of utf8 character */
+	for (i = 0; i < sizeof utfmask; i++) {
+		if (((unsigned char)*s & utfmask[i]) == utfbyte[i]) {
+			usize = i;
+			ucode = (unsigned char)*s & ~utfmask[i];
+			break;
+		}
+	}
+
+	/* if first byte is a continuation byte or is not allowed, return unknown */
+	if (i == sizeof utfmask || usize == 0)
+		return unknown;
+
+	/* check the other usize-1 bytes */
+	s++;
+	for (i = 1; i < usize; i++) {
+		*next_ret = s+1;
+		/* if byte is nul or is not a continuation byte, return unknown */
+		if (*s == '\0' || ((unsigned char)*s & utfmask[0]) != utfbyte[0])
+			return unknown;
+		/* 6 is the number of relevant bits in the continuation byte */
+		ucode = (ucode << 6) | ((unsigned char)*s & ~utfmask[0]);
+		s++;
+	}
+
+	/* check if ucode is invalid or in utf-16 surrogate halves */
+	if (!BETWEEN(ucode, utfmin[usize], utfmax[usize])
+	    || BETWEEN (ucode, 0xD800, 0xDFFF))
+		return unknown;
+
+	return ucode;
+}
+
+/* draw text into XftDraw */
+static int
+drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text)
+{
+	const char *s, *nexts;
+	FcChar32 ucode;
+	XftFont *currfont;
+	int textlen = 0;
+
+	s = text;
+	while (*s) {
+		XGlyphInfo ext;
+		int charexists;
+		size_t len;
+		size_t i;
+
+		charexists = 0;
+		ucode = getnextutf8char(s, &nexts);
+		for (i = 0; i < dc.nfonts; i++) {
+			charexists = XftCharExists(dpy, dc.fonts[i], ucode);
+			if (charexists)
+				break;
+		}
+		if (charexists)
+			currfont = dc.fonts[i];
+
+		len = nexts - s;
+
+		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)s,
+		                   len, &ext);
+		textlen += ext.xOff;
+
+		if (draw) {
+			int texty;
+
+			texty = y + (currfont->ascent - currfont->descent)/2;
+			XftDrawStringUtf8(draw, color, currfont, x, texty,
+			                  (XftChar8 *)s, len);
+			x += ext.xOff;
+		}
+
+		s = nexts;
+	}
+
+	return textlen;
+}
+
 /* setup position of and content of menu's slices */
 static void
 setupslices(struct Menu *menu)
 {
-	XGlyphInfo ext;
 	struct Slice *slice;
 	double anglerad;    /* angle in radians */
 	unsigned n = 0;
 	int angle = 0;
+	int textwidth;
 
 	menu->halfslice = (360 * 64) / (menu->nslices * 2);
 	for (slice = menu->list; slice != NULL; slice = slice->next) {
@@ -626,15 +764,14 @@ setupslices(struct Menu *menu)
 		slice->angle2 = menu->halfslice * 2;
 
 		/* get length of slice->label rendered in the font */
-		XftTextExtentsUtf8(dpy, dc.font, (XftChar8 *)slice->label,
-		                   slice->labellen, &ext);
+		textwidth = (slice->label) ? drawtext(NULL, NULL, 0, 0, slice->label): 0;
 
 		/* anglerad is now the angle in radians of the middle of the slice */
 		anglerad = (angle * M_PI) / (180 * 64);
 
 		/* get position of slice's label */
-		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (ext.width / 2);
-		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad)) + (dc.font->ascent / 2);
+		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (textwidth / 2);
+		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad));
 
 		/* get position of submenu */
 		slice->x = pie.radius + (pie.diameter * (cos(anglerad) * 0.9));
@@ -901,8 +1038,8 @@ drawslice(struct Menu *menu, struct Slice *slice, XftColor *color)
 		imlib_render_image_on_drawable(slice->iconx, slice->icony);
 	} else {                        /* otherwise, draw the label */
 		XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
-		XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-		                  slice->labelx, slice->labely, slice->label, slice->labellen);
+		drawtext(menu->draw, &color[ColorFG], slice->labelx,
+		         slice->labely, slice->label);
 	}
 
 	/* draw separator */
