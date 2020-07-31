@@ -129,21 +129,38 @@ static struct Menu *allocmenu(struct Menu *parent, struct Slice *list, unsigned 
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
 static struct Menu *parsestdin(void);
 
+/* icon loader */
 static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
+
+/* menu and slice setters, and their helper routines */
 static void setupslices(struct Menu *menu);
 static void setupmenupos(struct Menu *menu);
 static void setupmenu(struct Menu *menu);
+
+/* grabbers */
 static void grabpointer(void);
 static void grabkeyboard(void);
+
+/* getters */
 static struct Menu *getmenu(struct Menu *currmenu, Window win);
 static struct Slice *getslice(struct Menu *menu, int x, int y);
+
+/* menu drawers and mapper */
 static void mapmenu(struct Menu *currmenu);
 static void drawslice(struct Menu *menu, struct Slice *slice, XftColor *color);
 static void drawmenu(struct Menu *currmenu);
+
+/* cycle through slices */
 static struct Slice *slicecycle(struct Menu *currmenu, int direction);
+
+/* main event loop */
 static void run(struct Menu *currmenu);
+
+/* cleaners */
 static void cleanmenu(struct Menu *menu);
 static void cleanup(void);
+
+/* show usage */
 static void usage(void);
 
 /*
@@ -724,7 +741,7 @@ setupmenu(struct Menu *menu)
 	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
 
 	/* set window manager hints */
-	sizeh.flags = PMaxSize | PMinSize;
+	sizeh.flags = USPosition | PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = pie.diameter;
 	sizeh.min_height = sizeh.max_height = pie.diameter;
 	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
