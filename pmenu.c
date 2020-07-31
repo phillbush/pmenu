@@ -10,6 +10,7 @@
 #include <X11/XKBlib.h>
 #include <X11/Xft/Xft.h>
 #include <X11/extensions/shape.h>
+#include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
 #define PROGNAME "pmenu"
@@ -70,6 +71,12 @@ struct Menu {
 	Window win;             /* menu window to map on the screen */
 };
 
+/* monitor and cursor geometry structure */
+struct Monitor {
+	int x, y, w, h;         /* monitor geometry */
+	int cursx, cursy;
+};
+
 /* geometry of the pie and bitmap that shapes it */
 struct Pie {
 	GC gc;              /* graphic context of the bitmaps */
@@ -89,16 +96,24 @@ struct Pie {
 	double separatorend;
 };
 
-/* functions declarations */
-static void getresources(void);
-static void getcolor(const char *s, XftColor *color);
-static void setupdc(void);
-static void setuppie(void);
+/*
+ * Functions declarations
+ */
+
+/* initializers, and their helper routine */
+static void ealloccolor(const char *s, XftColor *color);
+static void initmonitor(void);
+static void initresources(void);
+static void initdc(void);
+static void initpie(void);
+
+/* structure builders, and their helper routines */
 static struct Slice *allocslice(const char *label, const char *output, char *file);
 static struct Menu *allocmenu(struct Menu *parent, struct Slice *list, unsigned level);
 static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
-static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
 static struct Menu *parsestdin(void);
+
+static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
 static void setupslices(struct Menu *menu);
 static void setupmenupos(struct Menu *menu);
 static void setupmenu(struct Menu *menu);
@@ -111,9 +126,13 @@ static void drawslice(struct Menu *menu, struct Slice *slice, XftColor *color);
 static void drawmenu(struct Menu *currmenu);
 static struct Slice *slicecycle(struct Menu *currmenu, int direction);
 static void run(struct Menu *currmenu);
-static void freemenu(struct Menu *menu);
+static void cleanmenu(struct Menu *menu);
 static void cleanup(void);
 static void usage(void);
+
+/*
+ * Variable declarations
+ */
 
 /* X stuff */
 static Display *dpy;
@@ -122,6 +141,7 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static struct DC dc;
+static struct Monitor mon;
 
 /* The pie bitmap structure */
 static struct Pie pie;
@@ -133,18 +153,9 @@ int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
-	int ch;
 
-	while ((ch = getopt(argc, argv, "")) != -1) {
-		switch (ch) {
-		default:
-			usage();
-			break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
+	argc--;
+	argv++;
 	if (argc != 0)
 		usage();
 
@@ -163,10 +174,11 @@ main(int argc, char *argv[])
 	imlib_context_set_visual(visual);
 	imlib_context_set_colormap(colormap);
 
-	/* setup */
-	getresources();
-	setupdc();
-	setuppie();
+	/* initializers */
+	initmonitor();
+	initresources();
+	initdc();
+	initpie();
 
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
@@ -182,15 +194,58 @@ main(int argc, char *argv[])
 	run(rootmenu);
 
 	/* freeing stuff */
-	freemenu(rootmenu);
+	cleanmenu(rootmenu);
 	cleanup();
 
 	return 0;
 }
 
+/* get color from color string */
+static void
+ealloccolor(const char *s, XftColor *color)
+{
+	if(!XftColorAllocName(dpy, visual, colormap, s, color))
+		errx(1, "cannot allocate color: %s", s);
+}
+
+/* query monitor information and cursor position */
+static void
+initmonitor(void)
+{
+	XineramaScreenInfo *info = NULL;
+	Window dw;          /* dummy variable */
+	int di;             /* dummy variable */
+	unsigned du;        /* dummy variable */
+	int nmons;
+	int i;
+
+	XQueryPointer(dpy, rootwin, &dw, &dw, &mon.cursx, &mon.cursy, &di, &di, &du);
+
+	mon.x = mon.y = 0;
+	mon.w = DisplayWidth(dpy, screen);
+	mon.h = DisplayHeight(dpy, screen);
+
+	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
+		int selmon = 0;
+
+		for (i = 0; i < nmons; i++) {
+			if (mon.cursx >= info[i].x_org && mon.cursx <= info[i].x_org + info[i].width &&
+				mon.cursy >= info[i].y_org && mon.cursy <= info[i].y_org + info[i].height) {
+				selmon = i;
+				break;
+			}
+		}
+
+		mon.x = info[selmon].x_org;
+		mon.y = info[selmon].y_org;
+		mon.w = info[selmon].width;
+		mon.h = info[selmon].height;
+	}
+}
+
 /* read xrdb for configuration options */
 static void
-getresources(void)
+initresources(void)
 {
 	char *xrm;
 	long n;
@@ -231,28 +286,20 @@ getresources(void)
 	XrmDestroyDatabase(xdb);
 }
 
-/* get color from color string */
-static void
-getcolor(const char *s, XftColor *color)
-{
-	if(!XftColorAllocName(dpy, visual, colormap, s, color))
-		errx(1, "cannot allocate color: %s", s);
-}
-
 /* init draw context */
 static void
-setupdc(void)
+initdc(void)
 {
 	XGCValues values;
 	unsigned long valuemask;
 
 	/* get color pixels */
-	getcolor(background_color,    &dc.normal[ColorBG]);
-	getcolor(foreground_color,    &dc.normal[ColorFG]);
-	getcolor(selbackground_color, &dc.selected[ColorBG]);
-	getcolor(selforeground_color, &dc.selected[ColorFG]);
-	getcolor(separator_color,     &dc.separator);
-	getcolor(border_color,        &dc.border);
+	ealloccolor(background_color,    &dc.normal[ColorBG]);
+	ealloccolor(foreground_color,    &dc.normal[ColorFG]);
+	ealloccolor(selbackground_color, &dc.selected[ColorBG]);
+	ealloccolor(selforeground_color, &dc.selected[ColorFG]);
+	ealloccolor(separator_color,     &dc.separator);
+	ealloccolor(border_color,        &dc.border);
 
 	/* try to get font */
 	if ((dc.font = XftFontOpenName(dpy, screen, font)) == NULL)
@@ -267,7 +314,7 @@ setupdc(void)
 
 /* setup pie */
 static void
-setuppie(void)
+initpie(void)
 {
 	XGCValues values;
 	unsigned long valuemask;
@@ -603,43 +650,38 @@ setupslices(struct Menu *menu)
 static void
 setupmenupos(struct Menu *menu)
 {
-	Window w1, w2;  /* unused variables */
-	int a, b;       /* unused variables */
-	unsigned mask;  /* unused variable */
-	int cursx, cursy;
-	int screenw, screenh;
+	Window w1;  /* dummy variable */
+	int x, y;   /* position of the center of the menu */
 
 	if (menu->parent == NULL) {
-		XQueryPointer(dpy, rootwin, &w1, &w2, &cursx, &cursy, &a, &b, &mask);
+		x = mon.cursx;
+		y = mon.cursy;
 	} else {
 		Bool ret;
 		ret = XTranslateCoordinates(dpy, menu->parent->win, rootwin,
 		                            menu->caller->x, menu->caller->y,
-		                            &cursx, &cursy, &w1);
+		                            &x, &y, &w1);
 
 		if (ret == False)
 			errx(EXIT_FAILURE, "menus are on different screens");
 	}
 
-	screenw = DisplayWidth(dpy, screen);
-	screenh = DisplayHeight(dpy, screen);
+	menu->x = mon.x;
+	menu->y = mon.y;
 
-	menu->x = 0;
-	menu->y = 0;
+	if (x - mon.x >= pie.radius) {
+		if (mon.x + mon.w - x >= pie.radius)
+			menu->x = x - pie.radius;
+		else if (mon.x + mon.w >= pie.fulldiameter)
+			menu->x = mon.x + mon.w - pie.fulldiameter;
+	}
 
-	if (cursx < pie.radius)
-		;
-	else if (screenw - cursx >= pie.radius)
-		menu->x = cursx - pie.radius;
-	else if (screenw >= pie.fulldiameter)
-		menu->x = screenw - pie.fulldiameter;
-
-	if (cursy < pie.radius)
-		;
-	else if (screenh - cursy >= pie.radius)
-		menu->y = cursy - pie.radius;
-	else if (screenh >= pie.fulldiameter)
-		menu->y = screenh - pie.fulldiameter;
+	if (y - mon.y >= pie.radius) {
+		if (mon.y + mon.h - y >= pie.radius)
+			menu->y = y - pie.radius;
+		else if (mon.y + mon.h >= pie.fulldiameter)
+			menu->y = mon.y + mon.h - pie.fulldiameter;
+	}
 }
 
 /* recursivelly setup menu configuration and its pixmap */
@@ -1036,7 +1078,7 @@ selectslice:
 
 /* recursivelly free pixmaps and destroy windows */
 static void
-freemenu(struct Menu *menu)
+cleanmenu(struct Menu *menu)
 {
 	struct Slice *slice;
 	struct Slice *tmp;
@@ -1044,7 +1086,7 @@ freemenu(struct Menu *menu)
 	slice = menu->list;
 	while (slice != NULL) {
 		if (slice->submenu != NULL)
-			freemenu(slice->submenu);
+			cleanmenu(slice->submenu);
 		tmp = slice;
 		if (tmp->label != tmp->output)
 			free(tmp->label);
