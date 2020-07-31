@@ -25,6 +25,22 @@
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
 
+/* configuration structure */
+struct Config {
+	const char *font;
+	const char *background_color;
+	const char *foreground_color;
+	const char *selbackground_color;
+	const char *selforeground_color;
+	const char *separator_color;
+	const char *border_color;
+	int border_pixels;
+	int separator_pixels;
+	unsigned diameter_pixels;
+	double separatorbeg;
+	double separatorend;
+};
+
 /* draw context structure */
 struct DC {
 	XftColor normal[ColorLast];     /* color of unselected slice */
@@ -261,27 +277,27 @@ initresources(void)
 
 	if (XrmGetResource(xdb, "pmenu.diameterWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			diameter_pixels = n;
+			config.diameter_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			border_pixels = n;
+			config.border_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
 		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			separator_pixels = n;
+			config.separator_pixels = n;
 	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
-		background_color = strdup(xval.addr);
+		config.background_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
-		foreground_color = strdup(xval.addr);
+		config.foreground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.selbackground", "*", &type, &xval) == True)
-		selbackground_color = strdup(xval.addr);
+		config.selbackground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.selforeground", "*", &type, &xval) == True)
-		selforeground_color = strdup(xval.addr);
+		config.selforeground_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.separator", "*", &type, &xval) == True)
-		separator_color = strdup(xval.addr);
+		config.separator_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.border", "*", &type, &xval) == True)
-		border_color = strdup(xval.addr);
+		config.border_color = strdup(xval.addr);
 	if (XrmGetResource(xdb, "pmenu.font", "*", &type, &xval) == True)
-		font = strdup(xval.addr);
+		config.font = strdup(xval.addr);
 
 	XrmDestroyDatabase(xdb);
 }
@@ -294,20 +310,20 @@ initdc(void)
 	unsigned long valuemask;
 
 	/* get color pixels */
-	ealloccolor(background_color,    &dc.normal[ColorBG]);
-	ealloccolor(foreground_color,    &dc.normal[ColorFG]);
-	ealloccolor(selbackground_color, &dc.selected[ColorBG]);
-	ealloccolor(selforeground_color, &dc.selected[ColorFG]);
-	ealloccolor(separator_color,     &dc.separator);
-	ealloccolor(border_color,        &dc.border);
+	ealloccolor(config.background_color,    &dc.normal[ColorBG]);
+	ealloccolor(config.foreground_color,    &dc.normal[ColorFG]);
+	ealloccolor(config.selbackground_color, &dc.selected[ColorBG]);
+	ealloccolor(config.selforeground_color, &dc.selected[ColorFG]);
+	ealloccolor(config.separator_color,     &dc.separator);
+	ealloccolor(config.border_color,        &dc.border);
 
 	/* try to get font */
-	if ((dc.font = XftFontOpenName(dpy, screen, font)) == NULL)
+	if ((dc.font = XftFontOpenName(dpy, screen, config.font)) == NULL)
 		errx(1, "cannot load font");
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
-	values.line_width = separator_pixels;
+	values.line_width = config.separator_pixels;
 	valuemask = GCLineWidth | GCArcMode;
 	dc.gc = XCreateGC(dpy, rootwin, valuemask, &values);
 }
@@ -321,8 +337,8 @@ initpie(void)
 	unsigned x, y;
 
 	/* set pie geometry */
-	pie.border = border_pixels;
-	pie.diameter = diameter_pixels;
+	pie.border = config.border_pixels;
+	pie.diameter = config.diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
 
@@ -867,9 +883,9 @@ drawslice(struct Menu *menu, struct Slice *slice, XftColor *color)
 		imlib_context_set_image(slice->icon);
 		imlib_render_image_on_drawable(slice->iconx, slice->icony);
 	} else {                        /* otherwise, draw the label */
-	XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
-	XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
-                      slice->labelx, slice->labely, slice->label, slice->labellen);
+		XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
+		XftDrawStringUtf8(menu->draw, &color[ColorFG], dc.font,
+		                  slice->labelx, slice->labely, slice->label, slice->labellen);
 	}
 
 	/* draw separator */
