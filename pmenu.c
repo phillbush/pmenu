@@ -275,12 +275,16 @@ parsefonts(const char *s)
 		i = 0;
 		while (isspace(*p))
 			p++;
-		while (*p != '\0' && *p != ',') {
+		while (i < sizeof buf && *p != '\0' && *p != ',')
 			buf[i++] = *p++;
-		}
+		if (i >= sizeof buf)
+			errx(1, "font name too long");
 		if (*p == ',')
 			p++;
 		buf[i] = '\0';
+		if (nfont == 0)
+			if ((dc.pattern = FcNameParse((FcChar8 *)buf)) == NULL)
+				errx(1, "the first font in the cache must be loaded from a font string");
 		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
 			errx(1, "cannot load font");
 	}
