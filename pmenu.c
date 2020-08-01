@@ -52,7 +52,8 @@ struct DC {
 
 	GC gc;                          /* graphics context */
 
-	XftFont **fonts;                /* fonts */
+	FcPattern *pattern;
+	XftFont **fonts;
 	size_t nfonts;
 };
 
@@ -139,6 +140,7 @@ static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *hei
 
 /* text drawer, and its helper routine */
 static FcChar32 getnextutf8char(const char *s, const char **end_ret);
+static XftFont *getfontucode(FcChar32 ucode);
 static int drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text);
 
 /* menu and slice setters, and their helper routines */
@@ -697,51 +699,87 @@ getnextutf8char(const char *s, const char **next_ret)
 	return ucode;
 }
 
+/* get which font contains a given code point */
+static XftFont *
+getfontucode(FcChar32 ucode)
+{
+	FcCharSet *fccharset = NULL;
+	FcPattern *fcpattern = NULL;
+	FcPattern *match = NULL;
+	XftFont *retfont = NULL;
+	XftResult result;
+	size_t i;
+
+	for (i = 0; i < dc.nfonts; i++)
+		if (XftCharExists(dpy, dc.fonts[i], ucode) == FcTrue)
+			return dc.fonts[i];
+
+	/* create a charset containing our code point */
+	fccharset = FcCharSetCreate();
+	FcCharSetAddChar(fccharset, ucode);
+
+	/* create a pattern akin to the dc.pattern but containing our charset */
+	if (fccharset) {
+		fcpattern = FcPatternDuplicate(dc.pattern);
+		FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
+	}
+
+	/* find pattern matching fcpattern */
+	if (fcpattern) {
+		FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
+		FcDefaultSubstitute(fcpattern);
+		match = XftFontMatch(dpy, screen, fcpattern, &result);
+	}
+
+	/* if found a pattern, open its font */
+	if (match) {
+		retfont = XftFontOpenPattern(dpy, match);
+		if (retfont && XftCharExists(dpy, retfont, ucode) == FcTrue) {
+			if ((dc.fonts = realloc(dc.fonts, dc.nfonts+1)) == NULL)
+				err(1, "realloc");
+			dc.fonts[dc.nfonts] = retfont;
+			return dc.fonts[dc.nfonts++];
+		} else {
+			XftFontClose(dpy, retfont);
+		}
+	}
+
+	/* in case no fount was found, return the first one */
+	return dc.fonts[0];
+}
+
 /* draw text into XftDraw */
 static int
 drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text)
 {
-	const char *s, *nexts;
-	FcChar32 ucode;
-	XftFont *currfont;
-	int textlen = 0;
+	int textwidth = 0;
 
-	s = text;
-	while (*s) {
+	while (*text) {
+		XftFont *currfont;
 		XGlyphInfo ext;
-		int charexists;
+		FcChar32 ucode;
+		const char *next;
 		size_t len;
-		size_t i;
 
-		charexists = 0;
-		ucode = getnextutf8char(s, &nexts);
-		for (i = 0; i < dc.nfonts; i++) {
-			charexists = XftCharExists(dpy, dc.fonts[i], ucode);
-			if (charexists)
-				break;
-		}
-		if (charexists)
-			currfont = dc.fonts[i];
+		ucode = getnextutf8char(text, &next);
+		currfont = getfontucode(ucode);
 
-		len = nexts - s;
-
-		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)s,
-		                   len, &ext);
-		textlen += ext.xOff;
+		len = next - text;
+		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)text, len, &ext);
+		textwidth += ext.xOff;
 
 		if (draw) {
 			int texty;
 
 			texty = y + (currfont->ascent - currfont->descent)/2;
-			XftDrawStringUtf8(draw, color, currfont, x, texty,
-			                  (XftChar8 *)s, len);
+			XftDrawStringUtf8(draw, color, currfont, x, texty, (XftChar8 *)text, len);
 			x += ext.xOff;
 		}
 
-		s = nexts;
+		text = next;
 	}
 
-	return textlen;
+	return textwidth;
 }
 
 /* setup position of and content of menu's slices */
