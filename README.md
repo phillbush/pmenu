@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://i.redd.it/4tw9d2xy8o451.gif"/>
+  <img src="https://user-images.githubusercontent.com/63266536/89110619-10034f00-d43c-11ea-92a6-275eb50ef881.png", title="demo"/>
 </p>
 
 # πmenu
