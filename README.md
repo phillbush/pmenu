@@ -15,7 +15,7 @@ pop-up menu (that is, after selecting an option, the menu disappears).
 * πmenu reads something in and prints something out, the UNIX way.
 * Submenus (some pie-menu slices can spawn another menu).
 * Icons (pie-menu slices can contain icon image).
-* X resources support (you don't need to recompile xmenu for configuring it).
+* X resources support (you don't need to recompile πmenu for configuring it).
 
 Check out my other project, [xclickroot](https://github.com/phillbush/xclickroot) for an application that can
 spawn πmenu by right clicking on the root window (i.e. on the desktop).
