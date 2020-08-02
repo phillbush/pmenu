@@ -1,19 +1,23 @@
-/* font */
-static const char *font = "monospace:size=9";    /* for regular items */
+static struct Config config = {
+	/* font, separate different fonts with comma */
+	.font = "monospace:size=9,DejaVuSansMono:size=9",
 
-/* colors */
-static const char *background_color = "#000000";
-static const char *foreground_color = "#FFFFFF";
-static const char *selbackground_color = "#3465a4";
-static const char *selforeground_color = "#FFFFFF";
-static const char *separator_color = "#555753";
-static const char *border_color = "#555753";
+	/* colors */
+	.background_color = "#000000",
+	.foreground_color = "#FFFFFF",
+	.selbackground_color = "#3465a4",
+	.selforeground_color = "#FFFFFF",
+	.separator_color = "#555753",
+	.border_color = "#555753",
 
-/* sizes in pixels */
-static int border_pixels = 2;   /* menu border */
-static int separator_pixels = 1; /* line between items */
-static unsigned diameter_pixels = 200;
+	/* sizes in pixels */
+	.border_pixels = 2,     /* menu border */
+	.separator_pixels = 1,  /* line between items */
+	.diameter_pixels = 200,
 
-/* sizes from 0 to 1 */
-static double separatorbeg = 0.14;  /* beginning of the separator */
-static double separatorend = 0.37;  /* end of the separator */
+	/* the values below cannot be set via X resources */
+
+	/* sizes from 0 to 1 */
+	.separatorbeg = 0.14,  /* beginning of the separator */
+	.separatorend = 0.37   /* end of the separator */
+};
