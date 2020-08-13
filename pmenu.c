@@ -205,7 +205,7 @@ main(int argc, char *argv[])
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
-		errx(1, "cannot open display");
+		errx(1, "could not open display");
 	screen = DefaultScreen(dpy);
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
@@ -249,7 +249,7 @@ static void
 ealloccolor(const char *s, XftColor *color)
 {
 	if(!XftColorAllocName(dpy, visual, colormap, s, color))
-		errx(1, "cannot allocate color: %s", s);
+		errx(1, "could not allocate color: %s", s);
 }
 
 /* parse color string */
@@ -286,7 +286,7 @@ parsefonts(const char *s)
 			if ((dc.pattern = FcNameParse((FcChar8 *)buf)) == NULL)
 				errx(1, "the first font in the cache must be loaded from a font string");
 		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
-			errx(1, "cannot load font");
+			errx(1, "could not load font");
 	}
 }
 
@@ -545,7 +545,7 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 			  menu = menu->parent, i++)
 			;
 		if (menu == NULL)
-			errx(1, "reached NULL menu");
+			errx(1, "improper indentation detected");
 
 		/* find last slice in the new menu */
 		for (slice = menu->list; slice->next != NULL; slice = slice->next)
@@ -628,12 +628,52 @@ static Imlib_Image
 loadicon(const char *file, int size, int *width_ret, int *height_ret)
 {
 	Imlib_Image icon;
+	Imlib_Load_Error errcode;
+	const char *errstr;
 	int width;
 	int height;
 
-	icon = imlib_load_image(file);
-	if (icon == NULL)
-		errx(1, "cannot load icon %s", file);
+	icon = imlib_load_image_with_error_return(file, &errcode);
+	if (*file == '\0') {
+		errx(1, "could not load icon (file name is blank)");
+	} else if (icon == NULL) {
+		switch (errcode) {
+		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
+			errstr = "file does not exist";
+			break;
+		case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
+			errstr = "file is directory";
+			break;
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
+		case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
+			errstr = "permission denied";
+			break;
+		case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
+			errstr = "unknown file format";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
+			errstr = "path too long";
+			break;
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
+		case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
+		case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
+			errstr = "improper path";
+			break;
+		case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
+			errstr = "too many symbolic links";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
+			errstr = "out of memory";
+			break;
+		case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
+			errstr = "out of file descriptors";
+			break;
+		default:
+			errstr = "unknown error";
+			break;
+		}
+		errx(1, "could not load icon (%s): %s", errstr, file);
+	}
 
 	imlib_context_set_image(icon);
 
@@ -951,7 +991,7 @@ grabpointer(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "cannot grab pointer");
+	errx(1, "could not grab pointer");
 }
 
 /* try to grab keyboard, we may have to wait for another process to ungrab */
@@ -967,7 +1007,7 @@ grabkeyboard(void)
 			return;
 		nanosleep(&ts, NULL);
 	}
-	errx(1, "cannot grab keyboard");
+	errx(1, "could not grab keyboard");
 }
 
 /* get menu of given window */
