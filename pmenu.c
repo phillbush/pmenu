@@ -921,14 +921,14 @@ setupmenupos(struct Menu *menu)
 
 	if (x - mon.x >= pie.radius) {
 		if (mon.x + mon.w - x >= pie.radius)
-			menu->x = x - pie.radius;
+			menu->x = x - pie.radius - pie.border;
 		else if (mon.x + mon.w >= pie.fulldiameter)
 			menu->x = mon.x + mon.w - pie.fulldiameter;
 	}
 
 	if (y - mon.y >= pie.radius) {
 		if (mon.y + mon.h - y >= pie.radius)
-			menu->y = y - pie.radius;
+			menu->y = y - pie.radius - pie.border;
 		else if (mon.y + mon.h >= pie.fulldiameter)
 			menu->y = mon.y + mon.h - pie.fulldiameter;
 	}
