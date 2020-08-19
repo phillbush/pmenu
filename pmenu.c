@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -399,7 +400,6 @@ initpie(void)
 {
 	XGCValues values;
 	unsigned long valuemask;
-	unsigned x, y;
 
 	/* set pie geometry */
 	pie.border = config.border_pixels;
@@ -414,8 +414,6 @@ initpie(void)
 	/* set the inner circle position */
 	pie.innercircley = pie.innercirclex = pie.radius - pie.radius * pie.separatorbeg;
 	pie.innercirclediameter = (pie.radius * pie.separatorbeg) * 2;
-
-	x = y = (pie.diameter + 1) / 2;
 
 	/* Create a simple bitmap mask (depth = 1) */
 	pie.clip = XCreatePixmap(dpy, rootwin, pie.diameter, pie.diameter, 1);
@@ -1218,7 +1216,6 @@ run(struct Menu *currmenu)
 	struct Menu *rootmenu;
 	struct Menu *menu;
 	struct Slice *slice;
-	struct Slice *prevslice = NULL;
 	KeySym ksym;
 	XEvent ev;
 
@@ -1250,14 +1247,12 @@ run(struct Menu *currmenu)
 				currmenu = currmenu->parent;
 				mapmenu(currmenu);
 			}
-			prevslice = NULL;
 			currmenu->selected = NULL;
 			drawmenu(currmenu);
 			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
 			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
-			prevslice = slice;
 			if (menu == NULL || slice == NULL)
 				menu->selected = NULL;
 			else
