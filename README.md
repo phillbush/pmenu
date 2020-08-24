@@ -7,8 +7,6 @@
 πmenu is a pie menu utility for X.
 πmenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
-πmenu can be controlled both via mouse and via keyboard.  The menu is a
-pop-up menu (that is, after selecting an option, the menu disappears).
 
 πmenu comes with the following features:
 
