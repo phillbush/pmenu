@@ -75,6 +75,9 @@ struct Slice {
 	struct Slice *prev;     /* previous slice */
 	struct Slice *next;     /* next slice */
 	struct Menu *submenu;   /* submenu spawned by clicking on slice */
+
+	int drawn;              /* whether the pixmap have been drawn */
+	Drawable pixmap;        /* pixmap containing the pie menu with the slice selected */
 	Imlib_Image icon;       /* icon */
 };
 
@@ -88,8 +91,9 @@ struct Menu {
 	int x, y;               /* menu position */
 	int halfslice;          /* angle of half a slice of the pie menu */
 	unsigned level;         /* menu level relative to root */
+
+	int drawn;              /* whether the pixmap have been drawn */
 	Drawable pixmap;        /* pixmap to draw the menu on */
-	XftDraw *draw;          /* drawable to draw the text on*/
 	Window win;             /* menu window to map on the screen */
 };
 
@@ -159,8 +163,7 @@ static struct Slice *getslice(struct Menu *menu, int x, int y);
 
 /* menu drawers and mapper */
 static void mapmenu(struct Menu *currmenu);
-static void drawslice(struct Menu *menu, struct Slice *slice, XftColor *color);
-static void drawmenu(struct Menu *currmenu);
+static void drawmenu(struct Menu *menu, struct Slice *selected);
 
 /* cycle through slices */
 static struct Slice *slicecycle(struct Menu *currmenu, int direction);
@@ -837,7 +840,7 @@ setupslices(struct Menu *menu)
 	int textwidth;
 
 	menu->halfslice = (360 * 64) / (menu->nslices * 2);
-	for (slice = menu->list; slice != NULL; slice = slice->next) {
+	for (slice = menu->list; slice; slice = slice->next) {
 		n++;
 
 		slice->angle1 = angle - menu->halfslice;
@@ -893,8 +896,12 @@ setupslices(struct Menu *menu)
 			slice->linexo = slice->linexi;
 
 		/* set position of the icon */
-
 		angle = (360 * 64 * n) / menu->nslices;
+
+		/* create and draw pixmap */
+		slice->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter,
+		                              DefaultDepth(dpy, screen));
+		slice->drawn = 0;
 	}
 }
 
@@ -965,10 +972,10 @@ setupmenu(struct Menu *menu)
 	sizeh.min_height = sizeh.max_height = pie.diameter;
 	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
 
-	/* create pixmap and XftDraw */
+	/* create pixmap */
 	menu->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter,
 	                             DefaultDepth(dpy, screen));
-	menu->draw = XftDrawCreate(dpy, menu->pixmap, visual, colormap);
+	menu->drawn = 0;
 
 	/* calculate positions of submenus */
 	for (slice = menu->list; slice != NULL; slice = slice->next) {
@@ -1112,66 +1119,86 @@ mapmenu(struct Menu *currmenu)
 
 /* draw regular slice */
 static void
-drawslice(struct Menu *menu, struct Slice *slice, XftColor *color)
+drawmenu(struct Menu *menu, struct Slice *selected)
 {
-	if (slice->file != NULL) {      /* if there is an icon, draw it */
-		imlib_context_set_drawable(menu->pixmap);
-		imlib_context_set_image(slice->icon);
-		imlib_render_image_on_drawable(slice->iconx, slice->icony);
-	} else {                        /* otherwise, draw the label */
-		XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
-		drawtext(menu->draw, &color[ColorFG], slice->labelx,
-		         slice->labely, slice->label);
+	struct Slice *slice;
+	XftColor *color;
+	XftDraw *draw;
+	Drawable pixmap;
+
+	if (selected) {
+		pixmap = selected->pixmap;
+		selected->drawn = 1;
+	} else {
+		pixmap = menu->pixmap;
+		menu->drawn = 1;
 	}
 
-	/* draw separator */
-	XSetForeground(dpy, dc.gc, dc.separator.pixel);
-	XDrawLine(dpy, menu->pixmap, dc.gc,
-	          slice->linexi, slice->lineyi,
-	          slice->linexo, slice->lineyo);
+	/* draw slice background */
+	for (slice = menu->list; slice; slice = slice->next) {
+		if (slice == selected)
+			color = dc.selected;
+		else
+			color = dc.normal;
+
+		XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
+		XFillArc(dpy, pixmap, dc.gc, 0, 0,
+			     pie.diameter, pie.diameter,
+			     slice->angle1, slice->angle2);
+	}
+
+	/* draw slice foreground */
+	for (slice = menu->list; slice; slice = slice->next) {
+		if (slice == selected)
+			color = dc.selected;
+		else
+			color = dc.normal;
+
+		if (slice->file) {      /* if there is an icon, draw it */
+			imlib_context_set_drawable(pixmap);
+			imlib_context_set_image(slice->icon);
+			imlib_render_image_on_drawable(slice->iconx, slice->icony);
+		} else {                /* otherwise, draw the label */
+			draw = XftDrawCreate(dpy, pixmap, visual, colormap);
+			XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
+			drawtext(draw, &color[ColorFG], slice->labelx,
+			         slice->labely, slice->label);
+			XftDrawDestroy(draw);
+		}
+
+		/* draw separator */
+		XSetForeground(dpy, dc.gc, dc.separator.pixel);
+		XDrawLine(dpy, pixmap, dc.gc,
+		          slice->linexi, slice->lineyi,
+		          slice->linexo, slice->lineyo);
+	}
+
+	/* draw inner circle */
+	XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+	XFillArc(dpy, pixmap, dc.gc,
+	         pie.innercirclex, pie.innercircley,
+	         pie.innercirclediameter, pie.innercirclediameter,
+	         0, 360 * 64);
 }
 
 /* draw slices of the current menu and of its ancestors */
 static void
-drawmenu(struct Menu *currmenu)
+copymenu(struct Menu *currmenu)
 {
 	struct Menu *menu;
-	struct Slice *slice;
-	XftColor *color;
+	Drawable pixmap;
 
 	for (menu = currmenu; menu != NULL; menu = menu->parent) {
-
-		/* draw slice background */
-		for (slice = menu->list; slice != NULL; slice = slice->next) {
-			if (slice == menu->selected)
-				color = dc.selected;
-			else
-				color = dc.normal;
-
-			XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
-			XFillArc(dpy, menu->pixmap, dc.gc, 0, 0,
-			         pie.diameter, pie.diameter,
-			         slice->angle1, slice->angle2);
+		if (menu->selected) {
+			pixmap = menu->selected->pixmap;
+			if (!menu->selected->drawn)
+				drawmenu(menu, menu->selected);
+		} else {
+			pixmap = menu->pixmap;
+			if (!menu->drawn)
+				drawmenu(menu, NULL);
 		}
-
-		/* draw slice foreground */
-		for (slice = menu->list; slice != NULL; slice = slice->next) {
-			if (slice == menu->selected)
-				color = dc.selected;
-			else
-				color = dc.normal;
-
-			drawslice(menu, slice, color);
-		}
-
-		/* draw inner circle */
-		XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
-		XFillArc(dpy, menu->pixmap, dc.gc,
-		         pie.innercirclex, pie.innercircley,
-		         pie.innercirclediameter, pie.innercirclediameter,
-		         0, 360 * 64);
-
-		XCopyArea(dpy, menu->pixmap, menu->win, dc.gc, 0, 0,
+		XCopyArea(dpy, pixmap, menu->win, dc.gc, 0, 0,
 			      pie.diameter, pie.diameter, 0, 0);
 	}
 }
@@ -1231,7 +1258,7 @@ run(struct Menu *currmenu)
 		switch(ev.type) {
 		case Expose:
 			if (ev.xexpose.count == 0)
-				drawmenu(currmenu);
+				copymenu(currmenu);
 			break;
 		case EnterNotify:
 			menu = getmenu(currmenu, ev.xcrossing.window);
@@ -1239,7 +1266,7 @@ run(struct Menu *currmenu)
 				break;
 			mapmenu(currmenu);
 			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-			drawmenu(currmenu);
+			copymenu(currmenu);
 			break;
 		case LeaveNotify:
 			menu = getmenu(currmenu, ev.xcrossing.window);
@@ -1250,7 +1277,7 @@ run(struct Menu *currmenu)
 				mapmenu(currmenu);
 			}
 			currmenu->selected = NULL;
-			drawmenu(currmenu);
+			copymenu(currmenu);
 			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1259,7 +1286,7 @@ run(struct Menu *currmenu)
 				menu->selected = NULL;
 			else
 				menu->selected = slice;
-			drawmenu(currmenu);
+			copymenu(currmenu);
 			break;
 		case ButtonRelease:
 			menu = getmenu(currmenu, ev.xbutton.window);
@@ -1275,7 +1302,7 @@ selectslice:
 			}
 			mapmenu(currmenu);
 			currmenu->selected = currmenu->list;
-			drawmenu(currmenu);
+			copymenu(currmenu);
 			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 			break;
 		case ButtonPress:
@@ -1312,7 +1339,7 @@ selectslice:
 			} else
 				break;
 			currmenu->selected = slice;
-			drawmenu(currmenu);
+			copymenu(currmenu);
 			break;
 		case ConfigureNotify:
 			menu = getmenu(currmenu, ev.xconfigure.window);
@@ -1352,7 +1379,6 @@ cleanmenu(struct Menu *menu)
 	}
 
 	XFreePixmap(dpy, menu->pixmap);
-	XftDrawDestroy(menu->draw);
 	XDestroyWindow(dpy, menu->win);
 	free(menu);
 }
