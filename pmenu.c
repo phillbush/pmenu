@@ -1367,6 +1367,7 @@ cleanmenu(struct Menu *menu)
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
+		XFreePixmap(dpy, slice->pixmap);
 		if (tmp->file != NULL) {
 			free(tmp->file);
 			if (tmp->icon != NULL) {
