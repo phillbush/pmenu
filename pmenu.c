@@ -683,7 +683,7 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 	width = imlib_image_get_width();
 	height = imlib_image_get_height();
 
-	if (width == MAX(width, height)) {
+	if (width > height) {
 		*width_ret = size;
 		*height_ret = (height * size) / width;
 	} else {
