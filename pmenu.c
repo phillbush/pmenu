@@ -14,6 +14,7 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
+#include "pmenu.h"
 
 #define PROGNAME "pmenu"
 #define ITEMPREV 0
@@ -24,163 +25,6 @@
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
-
-/* color enum */
-enum {ColorFG, ColorBG, ColorLast};
-
-/* configuration structure */
-struct Config {
-	const char *font;
-	const char *background_color;
-	const char *foreground_color;
-	const char *selbackground_color;
-	const char *selforeground_color;
-	const char *separator_color;
-	const char *border_color;
-	int border_pixels;
-	int separator_pixels;
-	unsigned diameter_pixels;
-	double separatorbeg;
-	double separatorend;
-};
-
-/* draw context structure */
-struct DC {
-	XftColor normal[ColorLast];     /* color of unselected slice */
-	XftColor selected[ColorLast];   /* color of selected slice */
-	XftColor border;                /* color of border */
-	XftColor separator;             /* color of the separator */
-
-	GC gc;                          /* graphics context */
-
-	FcPattern *pattern;
-	XftFont **fonts;
-	size_t nfonts;
-};
-
-/* pie slice structure */
-struct Slice {
-	char *label;            /* string to be drawed on the slice */
-	char *output;           /* string to be outputed when slice is clicked */
-	char *file;             /* filename of the icon */
-	size_t labellen;        /* strlen(label) */
-
-	int x, y;               /* position of the pointer of the slice */
-	int labelx, labely;     /* position of the label */
-	int angle1, angle2;     /* angle of the borders of the slice */
-	int linexi, lineyi;     /* position of the inner point of the line segment */
-	int linexo, lineyo;     /* position of the outer point of the line segment */
-	int iconx, icony;       /* position of the icon */
-
-	struct Slice *prev;     /* previous slice */
-	struct Slice *next;     /* next slice */
-	struct Menu *submenu;   /* submenu spawned by clicking on slice */
-
-	int drawn;              /* whether the pixmap have been drawn */
-	Drawable pixmap;        /* pixmap containing the pie menu with the slice selected */
-	Imlib_Image icon;       /* icon */
-};
-
-/* menu structure */
-struct Menu {
-	struct Menu *parent;    /* parent menu */
-	struct Slice *caller;   /* slice that spawned the menu */
-	struct Slice *list;     /* list of slices contained by the pie menu */
-	struct Slice *selected; /* slice currently selected in the menu */
-	unsigned nslices;       /* number of slices */
-	int x, y;               /* menu position */
-	int halfslice;          /* angle of half a slice of the pie menu */
-	unsigned level;         /* menu level relative to root */
-
-	int drawn;              /* whether the pixmap have been drawn */
-	Drawable pixmap;        /* pixmap to draw the menu on */
-	Window win;             /* menu window to map on the screen */
-};
-
-/* monitor and cursor geometry structure */
-struct Monitor {
-	int x, y, w, h;         /* monitor geometry */
-	int cursx, cursy;
-};
-
-/* geometry of the pie and bitmap that shapes it */
-struct Pie {
-	GC gc;              /* graphic context of the bitmaps */
-	Drawable clip;      /* bitmap shaping the clip region (without borders) */
-	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
-
-	int fulldiameter;   /* diameter of the pie + 2*border*/
-	int diameter;       /* diameter of the pie */
-	int radius;         /* radius of the pie */
-	int border;         /* border of the pie */
-
-	int innercirclex;
-	int innercircley;
-	int innercirclediameter;
-
-	double separatorbeg;
-	double separatorend;
-};
-
-/*
- * Functions declarations
- */
-
-/* initializers, and their helper routine */
-static void ealloccolor(const char *s, XftColor *color);
-static void parsefonts(const char *s);
-static void initmonitor(void);
-static void initresources(void);
-static void initdc(void);
-static void initpie(void);
-
-/* structure builders, and their helper routines */
-static struct Slice *allocslice(const char *label, const char *output, char *file);
-static struct Menu *allocmenu(struct Menu *parent, struct Slice *list, unsigned level);
-static struct Menu *buildmenutree(unsigned level, const char *label, const char *output, char *file);
-static struct Menu *parsestdin(void);
-
-/* icon loader */
-static Imlib_Image loadicon(const char *file, int size, int *width_ret, int *height_ret);
-
-/* text drawer, and its helper routine */
-static FcChar32 getnextutf8char(const char *s, const char **end_ret);
-static XftFont *getfontucode(FcChar32 ucode);
-static int drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text);
-
-/* menu and slice setters, and their helper routines */
-static void setupslices(struct Menu *menu);
-static void setupmenupos(struct Menu *menu);
-static void setupmenu(struct Menu *menu);
-
-/* grabbers */
-static void grabpointer(void);
-static void grabkeyboard(void);
-
-/* getters */
-static struct Menu *getmenu(struct Menu *currmenu, Window win);
-static struct Slice *getslice(struct Menu *menu, int x, int y);
-
-/* menu drawers and mapper */
-static void mapmenu(struct Menu *currmenu);
-static void drawmenu(struct Menu *menu, struct Slice *selected);
-
-/* cycle through slices */
-static struct Slice *slicecycle(struct Menu *currmenu, int direction);
-
-/* main event loop */
-static void run(struct Menu *currmenu);
-
-/* cleaners */
-static void cleanmenu(struct Menu *menu);
-static void cleanup(void);
-
-/* show usage */
-static void usage(void);
-
-/*
- * Variable declarations
- */
 
 /* X stuff */
 static Display *dpy;
@@ -196,56 +40,12 @@ static struct Pie pie;
 
 #include "config.h"
 
-/* pmenu: generate a pie menu from stdin and print selected entry to stdout */
-int
-main(int argc, char *argv[])
+/* show usage */
+static void
+usage(void)
 {
-	struct Menu *rootmenu;
-
-	argc--;
-	argv++;
-	if (argc != 0)
-		usage();
-
-	/* open connection to server and set X variables */
-	if ((dpy = XOpenDisplay(NULL)) == NULL)
-		errx(1, "could not open display");
-	screen = DefaultScreen(dpy);
-	visual = DefaultVisual(dpy, screen);
-	rootwin = RootWindow(dpy, screen);
-	colormap = DefaultColormap(dpy, screen);
-
-	/* imlib2 stuff */
-	imlib_set_cache_size(2048 * 1024);
-	imlib_context_set_dither(1);
-	imlib_context_set_display(dpy);
-	imlib_context_set_visual(visual);
-	imlib_context_set_colormap(colormap);
-
-	/* initializers */
-	initmonitor();
-	initresources();
-	initdc();
-	initpie();
-
-	/* generate menus and set them up */
-	rootmenu = parsestdin();
-	if (rootmenu == NULL)
-		errx(1, "no menu generated");
-	setupmenu(rootmenu);
-
-	/* grab mouse and keyboard */
-	grabpointer();
-	grabkeyboard();
-
-	/* run event loop */
-	run(rootmenu);
-
-	/* freeing stuff */
-	cleanmenu(rootmenu);
-	cleanup();
-
-	return 0;
+	(void)fprintf(stderr, "usage: pmenu\n");
+	exit(1);
 }
 
 /* get color from color string */
@@ -1402,10 +1202,54 @@ cleanup(void)
 	XCloseDisplay(dpy);
 }
 
-/* show usage */
-static void
-usage(void)
+/* pmenu: generate a pie menu from stdin and print selected entry to stdout */
+int
+main(int argc, char *argv[])
 {
-	(void)fprintf(stderr, "usage: pmenu\n");
-	exit(1);
+	struct Menu *rootmenu;
+
+	argc--;
+	argv++;
+	if (argc != 0)
+		usage();
+
+	/* open connection to server and set X variables */
+	if ((dpy = XOpenDisplay(NULL)) == NULL)
+		errx(1, "could not open display");
+	screen = DefaultScreen(dpy);
+	visual = DefaultVisual(dpy, screen);
+	rootwin = RootWindow(dpy, screen);
+	colormap = DefaultColormap(dpy, screen);
+
+	/* imlib2 stuff */
+	imlib_set_cache_size(2048 * 1024);
+	imlib_context_set_dither(1);
+	imlib_context_set_display(dpy);
+	imlib_context_set_visual(visual);
+	imlib_context_set_colormap(colormap);
+
+	/* initializers */
+	initmonitor();
+	initresources();
+	initdc();
+	initpie();
+
+	/* generate menus and set them up */
+	rootmenu = parsestdin();
+	if (rootmenu == NULL)
+		errx(1, "no menu generated");
+	setupmenu(rootmenu);
+
+	/* grab mouse and keyboard */
+	grabpointer();
+	grabkeyboard();
+
+	/* run event loop */
+	run(rootmenu);
+
+	/* freeing stuff */
+	cleanmenu(rootmenu);
+	cleanup();
+
+	return 0;
 }
