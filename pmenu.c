@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <err.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,27 +17,24 @@
 #include <Imlib2.h>
 #include "pmenu.h"
 
-#define PROGNAME "pmenu"
-#define ITEMPREV 0
-#define ITEMNEXT 1
-
-/* macros */
-#define LEN(x)              (sizeof (x) / sizeof (x[0]))
-#define MAX(x,y)            ((x)>(y)?(x):(y))
-#define MIN(x,y)            ((x)<(y)?(x):(y))
-#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
-
 /* X stuff */
 static Display *dpy;
-static int screen;
 static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
+static XrmDatabase xdb;
+static char *xrm;
+static int screen;
+static int depth;
 static struct DC dc;
 static struct Monitor mon;
 
 /* The pie bitmap structure */
 static struct Pie pie;
+
+/* flags */
+static int dflag = 0;           /* whether to run in daemon mode */
+volatile sig_atomic_t usrflag;  /* whether sent usrflag */
 
 #include "config.h"
 
@@ -46,6 +44,59 @@ usage(void)
 {
 	(void)fprintf(stderr, "usage: pmenu\n");
 	exit(1);
+}
+
+/* read xrdb for configuration options */
+static void
+getresources(void)
+{
+	char *type;
+	XrmValue xval;
+
+	if (xrm == NULL || xdb == NULL)
+		return;
+	if (XrmGetResource(xdb, "pmenu.diameterWidth", "*", &type, &xval) == True)
+		config.diameter_pixels = strtoul(xval.addr, NULL, 10);
+	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
+		config.border_pixels = strtoul(xval.addr, NULL, 10);
+	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
+		config.separator_pixels = strtoul(xval.addr, NULL, 10);
+	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
+		config.background_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
+		config.foreground_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.selbackground", "*", &type, &xval) == True)
+		config.selbackground_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.selforeground", "*", &type, &xval) == True)
+		config.selforeground_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.separator", "*", &type, &xval) == True)
+		config.separator_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.border", "*", &type, &xval) == True)
+		config.border_color = xval.addr;
+	if (XrmGetResource(xdb, "pmenu.font", "*", &type, &xval) == True)
+		config.font = xval.addr;
+}
+
+/* get options */
+static void
+getoptions(int *argc, char ***argv)
+{
+	int ch;
+
+	while ((ch = getopt(*argc, *argv, "d")) != -1) {
+		switch (ch) {
+		case 'd':
+			dflag = 1;
+			break;
+		default:
+			usage();
+			break;
+		}
+	}
+	*argc -= optind;
+	*argv += optind;
+	if (*argc > 0)
+		usage();
 }
 
 /* get color from color string */
@@ -94,84 +145,25 @@ parsefonts(const char *s)
 	}
 }
 
-/* query monitor information and cursor position */
+/* signal SIGUSR1 handler */
 static void
-initmonitor(void)
+sigusrhandler(int sig)
 {
-	XineramaScreenInfo *info = NULL;
-	Window dw;          /* dummy variable */
-	int di;             /* dummy variable */
-	unsigned du;        /* dummy variable */
-	int nmons;
-	int i;
-
-	XQueryPointer(dpy, rootwin, &dw, &dw, &mon.cursx, &mon.cursy, &di, &di, &du);
-
-	mon.x = mon.y = 0;
-	mon.w = DisplayWidth(dpy, screen);
-	mon.h = DisplayHeight(dpy, screen);
-
-	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
-		int selmon = 0;
-
-		for (i = 0; i < nmons; i++) {
-			if (BETWEEN(mon.cursx, info[i].x_org, info[i].x_org + info[i].width) &&
-			    BETWEEN(mon.cursy, info[i].y_org, info[i].y_org + info[i].height)) {
-				selmon = i;
-				break;
-			}
-		}
-
-		mon.x = info[selmon].x_org;
-		mon.y = info[selmon].y_org;
-		mon.w = info[selmon].width;
-		mon.h = info[selmon].height;
-
-		XFree(info);
-	}
+	(void)sig;
+	usrflag = 1;
 }
 
-/* read xrdb for configuration options */
+/* init signal  */
 static void
-initresources(void)
+initsignal(void)
 {
-	char *xrm;
-	long n;
-	char *type;
-	XrmDatabase xdb;
-	XrmValue xval;
+	struct sigaction sa;
 
-	XrmInitialize();
-	if ((xrm = XResourceManagerString(dpy)) == NULL)
-		return;
-
-	xdb = XrmGetStringDatabase(xrm);
-
-	if (XrmGetResource(xdb, "pmenu.diameterWidth", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.diameter_pixels = n;
-	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.border_pixels = n;
-	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
-		if ((n = strtol(xval.addr, NULL, 10)) > 0)
-			config.separator_pixels = n;
-	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
-		config.background_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
-		config.foreground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.selbackground", "*", &type, &xval) == True)
-		config.selbackground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.selforeground", "*", &type, &xval) == True)
-		config.selforeground_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.separator", "*", &type, &xval) == True)
-		config.separator_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.border", "*", &type, &xval) == True)
-		config.border_color = strdup(xval.addr);
-	if (XrmGetResource(xdb, "pmenu.font", "*", &type, &xval) == True)
-		config.font = strdup(xval.addr);
-
-	XrmDestroyDatabase(xdb);
+	sa.sa_handler = sigusrhandler;
+	sa.sa_flags = 0;
+	sigemptyset(&sa.sa_mask);
+	if (sigaction(SIGUSR1, &sa, NULL) == -1)
+		err(1, "sigaction");
 }
 
 /* init draw context */
@@ -243,41 +235,40 @@ initpie(void)
 	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
 }
 
+/* call strdup checking for error */
+static char *
+estrdup(const char *s)
+{
+	char *t;
+
+	if ((t = strdup(s)) == NULL)
+		err(1, "strdup");
+	return t;
+}
+
+/* call malloc checking for error */
+static void *
+emalloc(size_t size)
+{
+	void *p;
+
+	if ((p = malloc(size)) == NULL)
+		err(1, "malloc");
+	return p;
+}
+
 /* allocate an slice */
 static struct Slice *
 allocslice(const char *label, const char *output, char *file)
 {
 	struct Slice *slice;
 
-	if ((slice = malloc(sizeof *slice)) == NULL)
-		err(1, "malloc");
-
-	if (label == NULL) {
-		slice->label = NULL;
-	} else {
-		if ((slice->label = strdup(label)) == NULL)
-			err(1, "strdup");
-	}
-
-	if (label == output) {
-		slice->output = slice->label;
-	} else {
-		if ((slice->output = strdup(output)) == NULL)
-			err(1, "strdup");
-	}
-
-	if (file == NULL) {
-		slice->file = NULL;
-	} else {
-		if ((slice->file = strdup(file)) == NULL)
-			err(1, "strdup");
-	}
-
+	slice = emalloc(sizeof *slice);
+	slice->label = label ? estrdup(label) : NULL;
+	slice->output = (label == output) ? slice->label : estrdup(output);
+	slice->file = file ? estrdup(file) : NULL;
 	slice->y = 0;
-	if (slice->label == NULL)
-		slice->labellen = 0;
-	else
-		slice->labellen = strlen(slice->label);
+	slice->labellen = (slice->label) ? strlen(slice->label) : 0;
 	slice->next = NULL;
 	slice->submenu = NULL;
 	slice->icon = NULL;
@@ -290,10 +281,35 @@ static struct Menu *
 allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
 {
 	XSetWindowAttributes swa;
+	XClassHint classh = {PROGNAME, PROGNAME};
+	XSizeHints sizeh;
 	struct Menu *menu;
 
-	if ((menu = malloc(sizeof *menu)) == NULL)
-		err(1, "malloc");
+	menu = emalloc(sizeof *menu);
+
+	/* create menu window */
+	swa.override_redirect = True;
+	swa.background_pixel = dc.normal[ColorBG].pixel;
+	swa.border_pixel = dc.border.pixel;
+	swa.save_under = True;  /* pop-up windows should save_under*/
+	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
+	               | PointerMotionMask | EnterWindowMask | LeaveWindowMask;
+	menu->win = XCreateWindow(dpy, rootwin, 0, 0, pie.diameter, pie.diameter, pie.border,
+	                          CopyFromParent, CopyFromParent, CopyFromParent,
+	                          CWOverrideRedirect | CWBackPixel |
+	                          CWBorderPixel | CWEventMask | CWSaveUnder,
+	                          &swa);
+
+	XShapeCombineMask(dpy, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
+	XShapeCombineMask(dpy, menu->win, ShapeBounding, -pie.border, -pie.border, pie.bounding, ShapeSet);
+
+	/* set window manager hints */
+	sizeh.flags = USPosition | PMaxSize | PMinSize;
+	sizeh.min_width = sizeh.max_width = pie.diameter;
+	sizeh.min_height = sizeh.max_height = pie.diameter;
+	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
+
+	/* set menu variables */
 	menu->parent = parent;
 	menu->list = list;
 	menu->caller = NULL;
@@ -302,21 +318,8 @@ allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
 	menu->x = 0;    /* calculated by setupmenu() */
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
-
-	swa.override_redirect = True;
-	swa.background_pixel = dc.normal[ColorBG].pixel;
-	swa.border_pixel = dc.border.pixel;
-	swa.save_under = True;  /* pop-up windows should save_under*/
-	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask
-	               | PointerMotionMask | EnterWindowMask | LeaveWindowMask;
-	menu->win = XCreateWindow(dpy, rootwin, 0, 0, 1, 1, 0,
-	                          CopyFromParent, CopyFromParent, CopyFromParent,
-	                          CWOverrideRedirect | CWBackPixel |
-	                          CWBorderPixel | CWEventMask | CWSaveUnder,
-	                          &swa);
-
-	XShapeCombineMask(dpy, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
-	XShapeCombineMask(dpy, menu->win, ShapeBounding, -pie.border, -pie.border, pie.bounding, ShapeSet);
+	menu->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter, depth);
+	menu->drawn = 0;
 
 	return menu;
 }
@@ -630,8 +633,9 @@ drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text)
 }
 
 /* setup position of and content of menu's slices */
+/* recursivelly setup menu configuration and its pixmap */
 static void
-setupslices(struct Menu *menu)
+setslices(struct Menu *menu)
 {
 	struct Slice *slice;
 	double anglerad;    /* angle in radians */
@@ -699,88 +703,50 @@ setupslices(struct Menu *menu)
 		angle = (360 * 64 * n) / menu->nslices;
 
 		/* create and draw pixmap */
-		slice->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter,
-		                              DefaultDepth(dpy, screen));
+		slice->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter, depth);
 		slice->drawn = 0;
+
+		/* call recursivelly */
+		if (slice->submenu != NULL) {
+			setslices(slice->submenu);
+		}
 	}
 }
 
-/* setup the position of a menu */
+/* query monitor information and cursor position */
 static void
-setupmenupos(struct Menu *menu)
+getmonitor(void)
 {
-	Window w1;  /* dummy variable */
-	int x, y;   /* position of the center of the menu */
+	XineramaScreenInfo *info = NULL;
+	Window dw;          /* dummy variable */
+	int di;             /* dummy variable */
+	unsigned du;        /* dummy variable */
+	int nmons;
+	int i;
 
-	if (menu->parent == NULL) {
-		x = mon.cursx;
-		y = mon.cursy;
-	} else {
-		Bool ret;
-		ret = XTranslateCoordinates(dpy, menu->parent->win, rootwin,
-		                            menu->caller->x, menu->caller->y,
-		                            &x, &y, &w1);
+	XQueryPointer(dpy, rootwin, &dw, &dw, &mon.cursx, &mon.cursy, &di, &di, &du);
 
-		if (ret == False)
-			errx(EXIT_FAILURE, "menus are on different screens");
-	}
+	mon.x = mon.y = 0;
+	mon.w = DisplayWidth(dpy, screen);
+	mon.h = DisplayHeight(dpy, screen);
 
-	menu->x = mon.x;
-	menu->y = mon.y;
+	if ((info = XineramaQueryScreens(dpy, &nmons)) != NULL) {
+		int selmon = 0;
 
-	if (x - mon.x >= pie.radius) {
-		if (mon.x + mon.w - x >= pie.radius)
-			menu->x = x - pie.radius - pie.border;
-		else if (mon.x + mon.w >= pie.fulldiameter)
-			menu->x = mon.x + mon.w - pie.fulldiameter;
-	}
+		for (i = 0; i < nmons; i++) {
+			if (BETWEEN(mon.cursx, info[i].x_org, info[i].x_org + info[i].width) &&
+			    BETWEEN(mon.cursy, info[i].y_org, info[i].y_org + info[i].height)) {
+				selmon = i;
+				break;
+			}
+		}
 
-	if (y - mon.y >= pie.radius) {
-		if (mon.y + mon.h - y >= pie.radius)
-			menu->y = y - pie.radius - pie.border;
-		else if (mon.y + mon.h >= pie.fulldiameter)
-			menu->y = mon.y + mon.h - pie.fulldiameter;
-	}
-}
+		mon.x = info[selmon].x_org;
+		mon.y = info[selmon].y_org;
+		mon.w = info[selmon].width;
+		mon.h = info[selmon].height;
 
-/* recursivelly setup menu configuration and its pixmap */
-static void
-setupmenu(struct Menu *menu)
-{
-	struct Slice *slice;
-	XWindowChanges changes;
-	XSizeHints sizeh;
-	XClassHint classh = {PROGNAME, PROGNAME};
-
-	/* setup slices of the menu */
-	setupslices(menu);
-
-	/* setup position of menus */
-	setupmenupos(menu);
-
-	/* update menu geometry */
-	changes.border_width = pie.border;
-	changes.height = pie.diameter;
-	changes.width = pie.diameter;
-	changes.x = menu->x;
-	changes.y = menu->y;
-	XConfigureWindow(dpy, menu->win, CWBorderWidth | CWWidth | CWHeight | CWX | CWY, &changes);
-
-	/* set window manager hints */
-	sizeh.flags = USPosition | PMaxSize | PMinSize;
-	sizeh.min_width = sizeh.max_width = pie.diameter;
-	sizeh.min_height = sizeh.max_height = pie.diameter;
-	XSetWMProperties(dpy, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
-
-	/* create pixmap */
-	menu->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter,
-	                             DefaultDepth(dpy, screen));
-	menu->drawn = 0;
-
-	/* calculate positions of submenus */
-	for (slice = menu->list; slice != NULL; slice = slice->next) {
-		if (slice->submenu != NULL)
-			setupmenu(slice->submenu);
+		XFree(info);
 	}
 }
 
@@ -815,6 +781,50 @@ grabkeyboard(void)
 		nanosleep(&ts, NULL);
 	}
 	errx(1, "could not grab keyboard");
+}
+
+/* setup the position of a menu */
+static void
+placemenu(struct Menu *menu)
+{
+	struct Slice *slice;
+	XWindowChanges changes;
+	Window w1;  /* dummy variable */
+	int x, y;   /* position of the center of the menu */
+	Bool ret;
+
+	if (menu->parent == NULL) {
+		x = mon.cursx;
+		y = mon.cursy;
+	} else {
+		ret = XTranslateCoordinates(dpy, menu->parent->win, rootwin,
+		                            menu->caller->x, menu->caller->y,
+		                            &x, &y, &w1);
+		if (ret == False)
+			errx(EXIT_FAILURE, "menus are on different screens");
+	}
+	menu->x = mon.x;
+	menu->y = mon.y;
+	if (x - mon.x >= pie.radius) {
+		if (mon.x + mon.w - x >= pie.radius)
+			menu->x = x - pie.radius - pie.border;
+		else if (mon.x + mon.w >= pie.fulldiameter)
+			menu->x = mon.x + mon.w - pie.fulldiameter;
+	}
+	if (y - mon.y >= pie.radius) {
+		if (mon.y + mon.h - y >= pie.radius)
+			menu->y = y - pie.radius - pie.border;
+		else if (mon.y + mon.h >= pie.fulldiameter)
+			menu->y = mon.y + mon.h - pie.fulldiameter;
+	}
+	changes.x = menu->x;
+	changes.y = menu->y;
+	XConfigureWindow(dpy, menu->win, CWX | CWY, &changes);
+	for (slice = menu->list; slice != NULL; slice = slice->next) {
+		if (slice->submenu != NULL) {
+			placemenu(slice->submenu);
+		}
+	}
 }
 
 /* get menu of given window */
@@ -866,10 +876,9 @@ getslice(struct Menu *menu, int x, int y)
 }
 
 /* umap previous menus and map current menu and its parents */
-static void
-mapmenu(struct Menu *currmenu)
+static struct Menu *
+mapmenu(struct Menu *currmenu, struct Menu *prevmenu)
 {
-	static struct Menu *prevmenu = NULL;
 	struct Menu *menu, *menu_;
 	struct Menu *lcamenu;   /* lowest common ancestor menu */
 	unsigned minlevel;      /* level of the closest to root menu */
@@ -877,13 +886,12 @@ mapmenu(struct Menu *currmenu)
 
 	/* do not remap current menu if it wasn't updated*/
 	if (prevmenu == currmenu)
-		return;
+		goto done;
 
 	/* if this is the first time mapping, skip calculations */
 	if (prevmenu == NULL) {
-		XMapWindow(dpy, currmenu->win);
-		prevmenu = currmenu;
-		return;
+		XMapRaised(dpy, currmenu->win);
+		goto done;
 	}
 
 	/* find lowest common ancestor menu */
@@ -912,9 +920,23 @@ mapmenu(struct Menu *currmenu)
 
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent)
-		XMapWindow(dpy, menu->win);
+		XMapRaised(dpy, menu->win);
 
-	prevmenu = currmenu;
+done:
+	return currmenu;
+}
+
+/* umap urrent menu and its parents */
+static void
+unmapmenu(struct Menu *currmenu)
+{
+	struct Menu *menu;
+
+	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
+	for (menu = currmenu; menu; menu = menu->parent) {
+		menu->selected = NULL;
+		XUnmapWindow(dpy, menu->win);
+	}
 }
 
 /* draw regular slice */
@@ -1005,55 +1027,60 @@ copymenu(struct Menu *currmenu)
 
 /* cycle through the slices; non-zero direction is next, zero is prev */
 static struct Slice *
-slicecycle(struct Menu *currmenu, int direction)
+slicecycle(struct Menu *currmenu, int clockwise)
 {
 	struct Slice *slice;
 	struct Slice *lastslice;
 
 	slice = NULL;
-
-	if (direction == ITEMNEXT) {
-		if (currmenu->selected == NULL)
-			slice = currmenu->list;
-		else if (currmenu->selected->next != NULL)
-			slice = currmenu->selected->next;
-
-		if (slice == NULL)
-			slice = currmenu->list;
-	} else {
+	if (clockwise) {
 		for (lastslice = currmenu->list;
 		     lastslice != NULL && lastslice->next != NULL;
 		     lastslice = lastslice->next)
 			;
-
 		if (currmenu->selected == NULL)
-			slice = lastslice;
+			slice = currmenu->list;
 		else if (currmenu->selected->prev != NULL)
 			slice = currmenu->selected->prev;
-
 		if (slice == NULL)
 			slice = lastslice;
+	} else {
+		if (currmenu->selected == NULL)
+			slice = currmenu->list;
+		else if (currmenu->selected->next != NULL)
+			slice = currmenu->selected->next;
+		if (slice == NULL)
+			slice = currmenu->list;
 	}
-
 	return slice;
+}
+
+/* ungrab pointer and keyboard */
+static void
+ungrab(void)
+{
+	XUngrabPointer(dpy, CurrentTime);
+	XUngrabKeyboard(dpy, CurrentTime);
 }
 
 /* run event loop */
 static void
-run(struct Menu *currmenu)
+run(struct Menu *rootmenu)
 {
-	struct Menu *rootmenu;
-	struct Menu *menu;
-	struct Slice *slice;
+	struct Menu *currmenu;
+	struct Menu *prevmenu = NULL;
+	struct Menu *menu = NULL;
+	struct Slice *slice = NULL;
 	KeySym ksym;
 	XEvent ev;
 
-	rootmenu = currmenu;
-
-	mapmenu(currmenu);
-
+	getmonitor();
+	currmenu = rootmenu;
+	grabpointer();
+	grabkeyboard();
+	placemenu(currmenu);
+	prevmenu = mapmenu(currmenu, prevmenu);
 	XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-
 	while (!XNextEvent(dpy, &ev)) {
 		switch(ev.type) {
 		case Expose:
@@ -1064,7 +1091,7 @@ run(struct Menu *currmenu)
 			menu = getmenu(currmenu, ev.xcrossing.window);
 			if (menu == NULL)
 				break;
-			mapmenu(currmenu);
+			prevmenu = mapmenu(currmenu, prevmenu);
 			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 			copymenu(currmenu);
 			break;
@@ -1074,7 +1101,7 @@ run(struct Menu *currmenu)
 				break;
 			if (menu != rootmenu && menu == currmenu) {
 				currmenu = currmenu->parent;
-				mapmenu(currmenu);
+				prevmenu = mapmenu(currmenu, prevmenu);
 			}
 			currmenu->selected = NULL;
 			copymenu(currmenu);
@@ -1083,7 +1110,7 @@ run(struct Menu *currmenu)
 			menu = getmenu(currmenu, ev.xbutton.window);
 			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
 			if (menu == NULL || slice == NULL)
-				menu->selected = NULL;
+				break;
 			else
 				menu->selected = slice;
 			copymenu(currmenu);
@@ -1092,15 +1119,16 @@ run(struct Menu *currmenu)
 			menu = getmenu(currmenu, ev.xbutton.window);
 			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
 			if (menu == NULL || slice == NULL)
-				return;
+				goto done;
 selectslice:
-			if (slice->submenu != NULL) {
+			if (slice->submenu) {
 				currmenu = slice->submenu;
 			} else {
 				printf("%s\n", slice->output);
-				return;
+				fflush(stdout);
+				goto done;
 			}
-			mapmenu(currmenu);
+			prevmenu = mapmenu(currmenu, prevmenu);
 			currmenu->selected = currmenu->list;
 			copymenu(currmenu);
 			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
@@ -1108,14 +1136,14 @@ selectslice:
 		case ButtonPress:
 			menu = getmenu(currmenu, ev.xbutton.window);
 			if (menu == NULL)
-				return;
+				goto done;
 			break;
 		case KeyPress:
 			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
 
 			/* esc closes pmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu->parent == NULL)
-				return;
+				goto done;
 
 			/* Shift-Tab = ISO_Left_Tab */
 			if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
@@ -1124,9 +1152,9 @@ selectslice:
 			/* cycle through menu */
 			slice = NULL;
 			if (ksym == XK_Tab) {
-				slice = slicecycle(currmenu, ITEMPREV);
+				slice = slicecycle(currmenu, 1);
 			} else if (ksym == XK_ISO_Left_Tab) {
-				slice = slicecycle(currmenu, ITEMNEXT);
+				slice = slicecycle(currmenu, 0);
 			} else if ((ksym == XK_Return) &&
 			           currmenu->selected != NULL) {
 				slice = currmenu->selected;
@@ -1135,7 +1163,7 @@ selectslice:
 			           currmenu->parent != NULL) {
 				slice = currmenu->parent->selected;
 				currmenu = currmenu->parent;
-				mapmenu(currmenu);
+				prevmenu = mapmenu(currmenu, prevmenu);
 			} else
 				break;
 			currmenu->selected = slice;
@@ -1150,6 +1178,10 @@ selectslice:
 			break;
 		}
 	}
+done:
+	unmapmenu(currmenu);
+	ungrab();
+	XFlush(dpy);
 }
 
 /* recursivelly free pixmaps and destroy windows */
@@ -1184,22 +1216,17 @@ cleanmenu(struct Menu *menu)
 	free(menu);
 }
 
-/* cleanup and exit */
+/* cleanup drawing context */
 static void
-cleanup(void)
+cleandc(void)
 {
-	XUngrabPointer(dpy, CurrentTime);
-	XUngrabKeyboard(dpy, CurrentTime);
-
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.separator);
 	XftColorFree(dpy, visual, colormap, &dc.border);
-
 	XFreeGC(dpy, dc.gc);
-	XCloseDisplay(dpy);
 }
 
 /* pmenu: generate a pie menu from stdin and print selected entry to stdout */
@@ -1207,11 +1234,7 @@ int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
-
-	argc--;
-	argv++;
-	if (argc != 0)
-		usage();
+	sigset_t mask, oldmask;
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -1220,6 +1243,13 @@ main(int argc, char *argv[])
 	visual = DefaultVisual(dpy, screen);
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
+	depth = DefaultDepth(dpy, screen);
+	if ((xrm = XResourceManagerString(dpy)) != NULL)
+		xdb = XrmGetStringDatabase(xrm);
+
+	/* get configuration */
+	getresources();
+	getoptions(&argc, &argv);
 
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
@@ -1229,8 +1259,6 @@ main(int argc, char *argv[])
 	imlib_context_set_colormap(colormap);
 
 	/* initializers */
-	initmonitor();
-	initresources();
 	initdc();
 	initpie();
 
@@ -1238,18 +1266,27 @@ main(int argc, char *argv[])
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
-	setupmenu(rootmenu);
-
-	/* grab mouse and keyboard */
-	grabpointer();
-	grabkeyboard();
+	setslices(rootmenu);
 
 	/* run event loop */
-	run(rootmenu);
+	if (dflag) {
+		initsignal();
+		for (;;) {
+			usrflag = 0;
+			sigprocmask(SIG_BLOCK, &mask, &oldmask);
+			sigsuspend(&oldmask);
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
+			if (usrflag)
+				run(rootmenu);
+		}
+	} else {
+		run(rootmenu);
+	}
 
 	/* freeing stuff */
 	cleanmenu(rootmenu);
-	cleanup();
+	cleandc();
+	XCloseDisplay(dpy);
 
 	return 0;
 }

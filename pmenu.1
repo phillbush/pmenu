@@ -3,6 +3,7 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
+.RB [ \-d ]
 .SH DESCRIPTION
 .B pmenu
 is a pie menu for X,
@@ -10,6 +11,14 @@ it reads a list of newline-separated items from stdin,
 shows a pie menu for the user to select one of the items,
 and outputs the item selected to stdout.
 The pie menu contains one slice for each item.
+.PP
+The options are as follows:
+.TP
+.B \-d
+When this option is used,
+instead of display the pie menu and exit when selecting an option,
+pmenu waits for a SIGUSR1 signal;
+and whenever it receives such signal, the pie menu is shown.
 .PP
 Each item read from stdin has the following format:
 .IP

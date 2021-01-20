@@ -1,3 +1,11 @@
+#define PROGNAME "pmenu"
+
+/* macros */
+#define LEN(x)              (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
+
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
 
