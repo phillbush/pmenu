@@ -1,7 +1,6 @@
 #include <ctype.h>
 #include <err.h>
 #include <math.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,8 +32,8 @@ static struct Monitor mon;
 static struct Pie pie;
 
 /* flags */
-static int dflag = 0;           /* whether to run in daemon mode */
-volatile sig_atomic_t usrflag;  /* whether sent usrflag */
+static int rflag = 0;           /* whether to run in root mode */
+static unsigned int button;     /* button to trigger pmenu in root mode */
 
 #include "config.h"
 
@@ -42,7 +41,7 @@ volatile sig_atomic_t usrflag;  /* whether sent usrflag */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu\n");
+	(void)fprintf(stderr, "usage: pmenu [-r button]\n");
 	exit(1);
 }
 
@@ -83,10 +82,18 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "d")) != -1) {
+	while ((ch = getopt(*argc, *argv, "r:")) != -1) {
 		switch (ch) {
-		case 'd':
-			dflag = 1;
+		case 'r':
+			rflag = 1;
+			switch (*optarg) {
+			case '1': button = Button1;
+			case '2': button = Button2;
+			case '3': button = Button3;
+			case '4': button = Button4;
+			case '5': button = Button5;
+			default:  button = Button3;
+			}
 			break;
 		default:
 			usage();
@@ -143,27 +150,6 @@ parsefonts(const char *s)
 		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
 			errx(1, "could not load font");
 	}
-}
-
-/* signal SIGUSR1 handler */
-static void
-sigusrhandler(int sig)
-{
-	(void)sig;
-	usrflag = 1;
-}
-
-/* init signal  */
-static void
-initsignal(void)
-{
-	struct sigaction sa;
-
-	sa.sa_handler = sigusrhandler;
-	sa.sa_flags = 0;
-	sigemptyset(&sa.sa_mask);
-	if (sigaction(SIGUSR1, &sa, NULL) == -1)
-		err(1, "sigaction");
 }
 
 /* init draw context */
@@ -1068,120 +1054,145 @@ static void
 run(struct Menu *rootmenu)
 {
 	struct Menu *currmenu;
-	struct Menu *prevmenu = NULL;
+	struct Menu *prevmenu;
 	struct Menu *menu = NULL;
 	struct Slice *slice = NULL;
 	KeySym ksym;
 	XEvent ev;
+	int mapped = 0;
 
-	getmonitor();
-	currmenu = rootmenu;
-	grabpointer();
-	grabkeyboard();
-	placemenu(currmenu);
-	prevmenu = mapmenu(currmenu, prevmenu);
-	XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-	while (!XNextEvent(dpy, &ev)) {
-		switch(ev.type) {
-		case Expose:
-			if (ev.xexpose.count == 0)
-				copymenu(currmenu);
-			break;
-		case EnterNotify:
-			menu = getmenu(currmenu, ev.xcrossing.window);
-			if (menu == NULL)
-				break;
-			prevmenu = mapmenu(currmenu, prevmenu);
-			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-			copymenu(currmenu);
-			break;
-		case LeaveNotify:
-			menu = getmenu(currmenu, ev.xcrossing.window);
-			if (menu == NULL)
-				break;
-			if (menu != rootmenu && menu == currmenu) {
-				currmenu = currmenu->parent;
-				prevmenu = mapmenu(currmenu, prevmenu);
-			}
-			currmenu->selected = NULL;
-			copymenu(currmenu);
-			break;
-		case MotionNotify:
-			menu = getmenu(currmenu, ev.xbutton.window);
-			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
-			if (menu == NULL || slice == NULL)
-				break;
-			else
-				menu->selected = slice;
-			copymenu(currmenu);
-			break;
-		case ButtonRelease:
-			menu = getmenu(currmenu, ev.xbutton.window);
-			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
-			if (menu == NULL || slice == NULL)
-				goto done;
-selectslice:
-			if (slice->submenu) {
-				currmenu = slice->submenu;
-			} else {
-				printf("%s\n", slice->output);
-				fflush(stdout);
-				goto done;
-			}
-			prevmenu = mapmenu(currmenu, prevmenu);
-			currmenu->selected = currmenu->list;
-			copymenu(currmenu);
-			XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-			break;
-		case ButtonPress:
-			menu = getmenu(currmenu, ev.xbutton.window);
-			if (menu == NULL)
-				goto done;
-			break;
-		case KeyPress:
-			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
-
-			/* esc closes pmenu when current menu is the root menu */
-			if (ksym == XK_Escape && currmenu->parent == NULL)
-				goto done;
-
-			/* Shift-Tab = ISO_Left_Tab */
-			if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
-				ksym = XK_ISO_Left_Tab;
-
-			/* cycle through menu */
-			slice = NULL;
-			if (ksym == XK_Tab) {
-				slice = slicecycle(currmenu, 1);
-			} else if (ksym == XK_ISO_Left_Tab) {
-				slice = slicecycle(currmenu, 0);
-			} else if ((ksym == XK_Return) &&
-			           currmenu->selected != NULL) {
-				slice = currmenu->selected;
-				goto selectslice;
-			} else if ((ksym == XK_Escape) &&
-			           currmenu->parent != NULL) {
-				slice = currmenu->parent->selected;
-				currmenu = currmenu->parent;
-				prevmenu = mapmenu(currmenu, prevmenu);
-			} else
-				break;
-			currmenu->selected = slice;
-			copymenu(currmenu);
-			break;
-		case ConfigureNotify:
-			menu = getmenu(currmenu, ev.xconfigure.window);
-			if (menu == NULL)
-				break;
-			menu->x = ev.xconfigure.x;
-			menu->y = ev.xconfigure.y;
-			break;
-		}
+	if (!rflag) {
+		getmonitor();
+		prevmenu = NULL;
+		currmenu = rootmenu;
+		grabpointer();
+		grabkeyboard();
+		placemenu(currmenu);
+		prevmenu = mapmenu(currmenu, prevmenu);
+		XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 	}
-done:
-	unmapmenu(currmenu);
-	ungrab();
-	XFlush(dpy);
+	do {
+		while (!XNextEvent(dpy, &ev)) {
+			if (rflag && !mapped) {
+				if (ev.type == ButtonPress && ev.xbutton.subwindow == None) {
+					mapped = 1;
+					getmonitor();
+					prevmenu = NULL;
+					currmenu = rootmenu;
+					grabpointer();
+					grabkeyboard();
+					placemenu(currmenu);
+					prevmenu = mapmenu(currmenu, prevmenu);
+					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				}
+				XAllowEvents(dpy, ReplayPointer, CurrentTime);
+				continue;
+			}
+			switch(ev.type) {
+			case Expose:
+				if (ev.xexpose.count == 0)
+					copymenu(currmenu);
+				break;
+			case EnterNotify:
+				menu = getmenu(currmenu, ev.xcrossing.window);
+				if (menu == NULL)
+					break;
+				prevmenu = mapmenu(currmenu, prevmenu);
+				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				copymenu(currmenu);
+				break;
+			case LeaveNotify:
+				menu = getmenu(currmenu, ev.xcrossing.window);
+				if (menu == NULL)
+					break;
+				if (menu != rootmenu && menu == currmenu) {
+					currmenu = currmenu->parent;
+					prevmenu = mapmenu(currmenu, prevmenu);
+				}
+				currmenu->selected = NULL;
+				copymenu(currmenu);
+				break;
+			case MotionNotify:
+				menu = getmenu(currmenu, ev.xbutton.window);
+				slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+				if (menu == NULL)
+					break;
+				else if (slice == NULL)
+					menu->selected = NULL;
+				else
+					menu->selected = slice;
+				copymenu(currmenu);
+				break;
+			case ButtonRelease:
+				menu = getmenu(currmenu, ev.xbutton.window);
+				slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+				if (menu == NULL || slice == NULL)
+					break;
+	selectslice:
+				if (slice->submenu) {
+					currmenu = slice->submenu;
+				} else {
+					printf("%s\n", slice->output);
+					fflush(stdout);
+					goto done;
+				}
+				prevmenu = mapmenu(currmenu, prevmenu);
+				currmenu->selected = currmenu->list;
+				copymenu(currmenu);
+				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				break;
+			case ButtonPress:
+				menu = getmenu(currmenu, ev.xbutton.window);
+				slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+				if (menu == NULL || slice == NULL)
+					goto done;
+				break;
+			case KeyPress:
+				ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+
+				/* esc closes pmenu when current menu is the root menu */
+				if (ksym == XK_Escape && currmenu->parent == NULL)
+					goto done;
+
+				/* Shift-Tab = ISO_Left_Tab */
+				if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
+					ksym = XK_ISO_Left_Tab;
+
+				/* cycle through menu */
+				slice = NULL;
+				if (ksym == XK_Tab) {
+					slice = slicecycle(currmenu, 1);
+				} else if (ksym == XK_ISO_Left_Tab) {
+					slice = slicecycle(currmenu, 0);
+				} else if ((ksym == XK_Return) &&
+			           	   currmenu->selected != NULL) {
+					slice = currmenu->selected;
+					goto selectslice;
+				} else if ((ksym == XK_Escape) &&
+			           	   currmenu->parent != NULL) {
+					slice = currmenu->parent->selected;
+					currmenu = currmenu->parent;
+					prevmenu = mapmenu(currmenu, prevmenu);
+				} else
+					break;
+				currmenu->selected = slice;
+				copymenu(currmenu);
+				break;
+			case ConfigureNotify:
+				menu = getmenu(currmenu, ev.xconfigure.window);
+				if (menu == NULL)
+					break;
+				menu->x = ev.xconfigure.x;
+				menu->y = ev.xconfigure.y;
+				break;
+			}
+		}
+	done:
+		mapped = 0;
+		unmapmenu(currmenu);
+		ungrab();
+		XFlush(dpy);
+	} while (rflag);
 }
 
 /* recursivelly free pixmaps and destroy windows */
@@ -1234,7 +1245,6 @@ int
 main(int argc, char *argv[])
 {
 	struct Menu *rootmenu;
-	sigset_t mask, oldmask;
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -1262,6 +1272,10 @@ main(int argc, char *argv[])
 	initdc();
 	initpie();
 
+	/* if running in root mode, get button presses from root window */
+	if (rflag)
+		XGrabButton(dpy, button, 0, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
+
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
 	if (rootmenu == NULL)
@@ -1269,19 +1283,7 @@ main(int argc, char *argv[])
 	setslices(rootmenu);
 
 	/* run event loop */
-	if (dflag) {
-		initsignal();
-		for (;;) {
-			usrflag = 0;
-			sigprocmask(SIG_BLOCK, &mask, &oldmask);
-			sigsuspend(&oldmask);
-			sigprocmask(SIG_UNBLOCK, &mask, NULL);
-			if (usrflag)
-				run(rootmenu);
-		}
-	} else {
-		run(rootmenu);
-	}
+	run(rootmenu);
 
 	/* freeing stuff */
 	cleanmenu(rootmenu);

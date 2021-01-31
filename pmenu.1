@@ -3,7 +3,8 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
-.RB [ \-d ]
+.RB [ \-r
+.IR button ]
 .SH DESCRIPTION
 .B pmenu
 is a pie menu for X,
@@ -14,11 +15,15 @@ The pie menu contains one slice for each item.
 .PP
 The options are as follows:
 .TP
-.B \-d
+.BI "\-r " buton
 When this option is used,
-instead of display the pie menu and exit when selecting an option,
-pmenu waits for a SIGUSR1 signal;
-and whenever it receives such signal, the pie menu is shown.
+.B pmenu
+listens to button presses on the root window,
+and shows the pie menu when the button (a number between 1 and 5) is pressed on the root window.
+This option makes
+.B pmenu
+run continuously,
+so it should be run in background on a X startup file (like ~/.xinitrc, ~/.xprofile, etc).
 .PP
 Each item read from stdin has the following format:
 .IP
