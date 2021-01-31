@@ -1073,8 +1073,8 @@ run(struct Menu *rootmenu)
 	}
 	do {
 		while (!XNextEvent(dpy, &ev)) {
-			if (rflag && !mapped) {
-				if (ev.type == ButtonPress && ev.xbutton.subwindow == None) {
+			if (rflag && !mapped && ev.type == ButtonPress) {
+				if (ev.xbutton.subwindow == None) {
 					mapped = 1;
 					getmonitor();
 					prevmenu = NULL;
@@ -1084,8 +1084,9 @@ run(struct Menu *rootmenu)
 					placemenu(currmenu);
 					prevmenu = mapmenu(currmenu, prevmenu);
 					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				} else {
+					XAllowEvents(dpy, ReplayPointer, CurrentTime);
 				}
-				XAllowEvents(dpy, ReplayPointer, CurrentTime);
 				continue;
 			}
 			switch(ev.type) {
