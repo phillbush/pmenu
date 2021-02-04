@@ -3,6 +3,7 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
+.RB [ \-p ]
 .RB [ \-r
 .IR button ]
 .SH DESCRIPTION
@@ -14,6 +15,16 @@ and outputs the item selected to stdout.
 The pie menu contains one slice for each item.
 .PP
 The options are as follows:
+.TP
+.B \-p
+When
+.B \-r
+is used, pass the click to the root window,
+for the window manager to use it, for example.
+This may open the window manager's menu (if it has one).
+This option only makes sense when
+.B \-r
+is used.
 .TP
 .BI "\-r " buton
 When this option is used,

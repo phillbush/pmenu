@@ -33,6 +33,7 @@ static struct Pie pie;
 
 /* flags */
 static int rflag = 0;           /* whether to run in root mode */
+static int pflag = 0;           /* whether to pass click to root window */
 static unsigned int button;     /* button to trigger pmenu in root mode */
 
 #include "config.h"
@@ -41,7 +42,7 @@ static unsigned int button;     /* button to trigger pmenu in root mode */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-r button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-p] [-r button]\n");
 	exit(1);
 }
 
@@ -82,17 +83,32 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "r:")) != -1) {
+	while ((ch = getopt(*argc, *argv, "pr:")) != -1) {
 		switch (ch) {
+		case 'p':
+			pflag = 1;
+			break;
 		case 'r':
 			rflag = 1;
 			switch (*optarg) {
-			case '1': button = Button1;
-			case '2': button = Button2;
-			case '3': button = Button3;
-			case '4': button = Button4;
-			case '5': button = Button5;
-			default:  button = Button3;
+			case '1':
+				button = Button1;
+				break;
+			case '2':
+				button = Button2;
+				break;
+			case '3':
+				button = Button3;
+				break;
+			case '4':
+				button = Button4;
+				break;
+			case '5': 
+				button = Button5;
+				break;
+			default:
+				button = Button3;
+				break;
 			}
 			break;
 		default:
@@ -1075,6 +1091,8 @@ run(struct Menu *rootmenu)
 		while (!XNextEvent(dpy, &ev)) {
 			if (rflag && !mapped && ev.type == ButtonPress) {
 				if (ev.xbutton.subwindow == None) {
+					if (pflag)
+						XAllowEvents(dpy, ReplayPointer, CurrentTime);
 					mapped = 1;
 					getmonitor();
 					prevmenu = NULL;
@@ -1084,11 +1102,12 @@ run(struct Menu *rootmenu)
 					placemenu(currmenu);
 					prevmenu = mapmenu(currmenu, prevmenu);
 					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				} else {
+					XAllowEvents(dpy, ReplayPointer, CurrentTime);
 				}
-				XAllowEvents(dpy, ReplayPointer, CurrentTime);
 				continue;
 			}
-			switch(ev.type) {
+			switch (ev.type) {
 			case Expose:
 				if (ev.xexpose.count == 0)
 					copymenu(currmenu);
