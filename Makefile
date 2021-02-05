@@ -8,7 +8,7 @@ all: ${PROG}
 ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} ${LDFLAGS}
 
-${OBJS}: config.h
+${OBJS}: ${PROG}.h config.h
 
 .c.o:
 	${CC} ${CFLAGS} -c $<

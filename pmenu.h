@@ -37,6 +37,8 @@ struct DC {
 	FcPattern *pattern;
 	XftFont **fonts;
 	size_t nfonts;
+
+	XRenderPictureAttributes pictattr;
 };
 
 /* pie slice structure */
@@ -46,12 +48,11 @@ struct Slice {
 	char *file;             /* filename of the icon */
 	size_t labellen;        /* strlen(label) */
 
+	unsigned slicen;
 	int x, y;               /* position of the pointer of the slice */
 	int labelx, labely;     /* position of the label */
-	int angle1, angle2;     /* angle of the borders of the slice */
-	int linexi, lineyi;     /* position of the inner point of the line segment */
-	int linexo, lineyo;     /* position of the outer point of the line segment */
 	int iconx, icony;       /* position of the icon */
+	double anglea, angleb;  /* angle of the borders of the slice */
 
 	struct Slice *prev;     /* previous slice */
 	struct Slice *next;     /* next slice */
@@ -59,6 +60,7 @@ struct Slice {
 
 	int drawn;              /* whether the pixmap have been drawn */
 	Drawable pixmap;        /* pixmap containing the pie menu with the slice selected */
+	Picture picture;        /* XRender picture */
 	Imlib_Image icon;       /* icon */
 };
 
@@ -70,11 +72,12 @@ struct Menu {
 	struct Slice *selected; /* slice currently selected in the menu */
 	unsigned nslices;       /* number of slices */
 	int x, y;               /* menu position */
-	int halfslice;          /* angle of half a slice of the pie menu */
+	double half;            /* angle of half a slice of the pie menu */
 	unsigned level;         /* menu level relative to root */
 
 	int drawn;              /* whether the pixmap have been drawn */
 	Drawable pixmap;        /* pixmap to draw the menu on */
+	Picture picture;        /* XRender picture */
 	Window win;             /* menu window to map on the screen */
 };
 
@@ -95,10 +98,12 @@ struct Pie {
 	int radius;         /* radius of the pie */
 	int border;         /* border of the pie */
 
-	int innercirclex;
-	int innercircley;
-	int innercirclediameter;
+	int separatorbeg;
+	int separatorend;
+	double innerangle;
+	double outerangle;
 
-	double separatorbeg;
-	double separatorend;
+	Picture bg;
+	Picture selbg;
+	Picture separator;
 };

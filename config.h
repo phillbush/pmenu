@@ -17,7 +17,7 @@ static struct Config config = {
 
 	/* the values below cannot be set via X resources */
 
-	/* sizes from 0 to 1 */
+	/* sizes between 0 and 1 */
 	.separatorbeg = 0.14,  /* beginning of the separator */
 	.separatorend = 0.37   /* end of the separator */
 };

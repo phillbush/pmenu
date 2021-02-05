@@ -22,6 +22,7 @@ static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
 static XrmDatabase xdb;
+static XRenderPictFormat *xformat;
 static char *xrm;
 static int screen;
 static int depth;
@@ -173,6 +174,7 @@ static void
 initdc(void)
 {
 	XGCValues values;
+	Pixmap pbg, pselbg, separator;
 	unsigned long valuemask;
 
 	/* get color pixels */
@@ -191,6 +193,22 @@ initdc(void)
 	values.line_width = config.separator_pixels;
 	valuemask = GCLineWidth | GCArcMode;
 	dc.gc = XCreateGC(dpy, rootwin, valuemask, &values);
+
+	/* create color source Pictures */
+	dc.pictattr.repeat = 1;
+	dc.pictattr.poly_edge = PolyEdgeSmooth;
+	pbg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
+	pselbg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
+	separator = XCreatePixmap(dpy, rootwin, 1, 1, depth);
+	pie.bg = XRenderCreatePicture(dpy, pbg, xformat, CPRepeat, &dc.pictattr);
+	pie.selbg = XRenderCreatePicture(dpy, pselbg, xformat, CPRepeat, &dc.pictattr);
+	pie.separator = XRenderCreatePicture(dpy, separator, xformat, CPRepeat, &dc.pictattr);
+	XRenderFillRectangle(dpy, PictOpOver, pie.bg, &dc.normal[ColorBG].color, 0, 0, 1, 1);
+	XRenderFillRectangle(dpy, PictOpOver, pie.selbg, &dc.selected[ColorBG].color, 0, 0, 1, 1);
+	XRenderFillRectangle(dpy, PictOpOver, pie.separator, &dc.separator.color, 0, 0, 1, 1);
+	XFreePixmap(dpy, pbg);
+	XFreePixmap(dpy, pselbg);
+	XFreePixmap(dpy, separator);
 }
 
 /* setup pie */
@@ -207,12 +225,10 @@ initpie(void)
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
 
 	/* set the separator beginning and end */
-	pie.separatorbeg = config.separatorbeg;
-	pie.separatorend = config.separatorend;
-
-	/* set the inner circle position */
-	pie.innercircley = pie.innercirclex = pie.radius - pie.radius * pie.separatorbeg;
-	pie.innercirclediameter = (pie.radius * pie.separatorbeg) * 2;
+	pie.separatorbeg = pie.radius * config.separatorbeg;
+	pie.separatorend = pie.radius * config.separatorend;
+	pie.innerangle = atan(config.separator_pixels / (2.0 * pie.separatorbeg));
+	pie.outerangle = atan(config.separator_pixels / (2.0 * pie.separatorend));
 
 	/* Create a simple bitmap mask (depth = 1) */
 	pie.clip = XCreatePixmap(dpy, rootwin, pie.diameter, pie.diameter, 1);
@@ -320,7 +336,10 @@ allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
 	menu->x = 0;    /* calculated by setupmenu() */
 	menu->y = 0;    /* calculated by setupmenu() */
 	menu->level = level;
+
+	/* create pixmap and picture */
 	menu->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter, depth);
+	menu->picture = XRenderCreatePicture(dpy, menu->pixmap, xformat, CPPolyEdge | CPRepeat, &dc.pictattr);
 	menu->drawn = 0;
 
 	return menu;
@@ -640,78 +659,58 @@ static void
 setslices(struct Menu *menu)
 {
 	struct Slice *slice;
-	double anglerad;    /* angle in radians */
+	double a = 0.0;
 	unsigned n = 0;
-	int angle = 0;
 	int textwidth;
 
-	menu->halfslice = (360 * 64) / (menu->nslices * 2);
+	menu->half = M_PI / menu->nslices;
 	for (slice = menu->list; slice; slice = slice->next) {
-		n++;
+		slice->slicen = n++;
 
-		slice->angle1 = angle - menu->halfslice;
-		if (slice->angle1 < 0)
-			slice->angle1 += 360 * 64;
-		slice->angle2 = menu->halfslice * 2;
+		slice->anglea = a - menu->half;
+		slice->angleb = a + menu->half;
 
 		/* get length of slice->label rendered in the font */
 		textwidth = (slice->label) ? drawtext(NULL, NULL, 0, 0, slice->label): 0;
 
-		/* anglerad is now the angle in radians of the middle of the slice */
-		anglerad = (angle * M_PI) / (180 * 64);
-
 		/* get position of slice's label */
-		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(anglerad)) - (textwidth / 2);
-		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(anglerad));
+		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
+		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a));
 
 		/* get position of submenu */
-		slice->x = pie.radius + (pie.diameter * (cos(anglerad) * 0.9));
-		slice->y = pie.radius - (pie.diameter * (sin(anglerad) * 0.9));
+		slice->x = pie.radius + (pie.diameter * (cos(a) * 0.9));
+		slice->y = pie.radius - (pie.diameter * (sin(a) * 0.9));
 
 		/* create icon */
 		if (slice->file != NULL) {
 			int maxiconsize = (pie.radius + 1) / 2;
-			double sliceanglerad;   /* inner angle of a slice */
 			int iconw, iconh;       /* icon width and height */
 			int iconsize;           /* requested icon size */
 			int xdiff, ydiff;
 
-			sliceanglerad = (slice->angle2 * M_PI) / (180 * 64);
-
-			xdiff = pie.radius * 0.5 - (pie.radius * (cos(sliceanglerad) * 0.5));
-			ydiff = pie.radius * (sin(sliceanglerad) * 0.5);
+			xdiff = pie.radius * 0.5 - (pie.radius * (cos(menu->half) * 0.75));
+			ydiff = pie.radius * (sin(menu->half) * 0.75);
 
 			iconsize = sqrt(xdiff * xdiff + ydiff * ydiff);
 			iconsize = MIN(maxiconsize, iconsize);
 
 			slice->icon = loadicon(slice->file, iconsize, &iconw, &iconh);
 
-			slice->iconx = pie.radius + (pie.radius * (cos(anglerad) * 0.6)) - iconw / 2;
-			slice->icony = pie.radius - (pie.radius * (sin(anglerad) * 0.6)) - iconh / 2;
+			slice->iconx = pie.radius + (pie.radius * (cos(a) * 0.6)) - iconw / 2;
+			slice->icony = pie.radius - (pie.radius * (sin(a) * 0.6)) - iconh / 2;
 		}
-
-		/* anglerad is now the angle in radians of angle1 */
-		anglerad = (slice->angle1 * M_PI) / (180 * 64);
-		
-		/* set position of the line segment separating slices */
-		slice->linexi = pie.radius + pie.radius * (cos(anglerad) * pie.separatorbeg);
-		slice->lineyi = pie.radius + pie.radius * (sin(anglerad) * pie.separatorbeg);
-		slice->linexo = pie.radius + pie.radius * (cos(anglerad) * pie.separatorend);
-		slice->lineyo = pie.radius + pie.radius * (sin(anglerad) * pie.separatorend);
-		if (abs(slice->linexo - slice->linexi) <= 2)
-			slice->linexo = slice->linexi;
-
-		/* set position of the icon */
-		angle = (360 * 64 * n) / menu->nslices;
 
 		/* create and draw pixmap */
 		slice->pixmap = XCreatePixmap(dpy, menu->win, pie.diameter, pie.diameter, depth);
+		slice->picture = XRenderCreatePicture(dpy, slice->pixmap, xformat, CPPolyEdge | CPRepeat, &dc.pictattr);
 		slice->drawn = 0;
 
 		/* call recursivelly */
 		if (slice->submenu != NULL) {
 			setslices(slice->submenu);
 		}
+
+		a += menu->half * 2;
 	}
 }
 
@@ -847,8 +846,7 @@ static struct Slice *
 getslice(struct Menu *menu, int x, int y)
 {
 	struct Slice *slice;
-	double phi;
-	int angle;
+	double angle;
 	int r;
 
 	if (menu == NULL)
@@ -860,18 +858,17 @@ getslice(struct Menu *menu, int x, int y)
 
 	/* if the cursor is in the middle circle, it is in no slice */
 	r = sqrt(x * x + y * y);
-	if (r <= pie.radius * pie.separatorbeg)
+	if (r <= pie.separatorbeg)
 		return NULL;
 
-	phi = atan2(y, x);
-	if (y < 0)
-		phi += 2 * M_PI;
-	angle = ((phi * 180 * 64) / M_PI);
-
-	if (angle < menu->halfslice)
-		return menu->list;
-	for (slice = menu->list; slice != NULL; slice = slice->next)
-		if (angle >= slice->angle1 && angle < slice->angle1 + slice->angle2)
+	angle = atan2(y, x);
+	if (angle < 0.0) {
+		if (angle > -menu->half)
+			return menu->list;
+		angle = (2 * M_PI) + angle;
+	}
+	for (slice = menu->list; slice; slice = slice->next)
+		if (angle >= slice->anglea && angle < slice->angleb)
 			return slice;
 
 	return NULL;
@@ -941,6 +938,92 @@ unmapmenu(struct Menu *currmenu)
 	}
 }
 
+/* draw background of selected slice */
+static void
+drawslice(struct Menu *menu, struct Slice *slice)
+{
+	XPointDouble *p;
+	int i, n;
+	double hd, a, b, c;
+
+	if (slice == NULL)
+		return;
+
+	/* determine number of segments to draw */
+	hd = hypot(pie.radius, pie.radius)/2;
+	n = ((2 * M_PI) / (menu->nslices * acos(hd/(hd+1.0)))) + 0.5;
+
+	/* angles */
+	a = ((2 * M_PI) / (menu->nslices * n));
+	b = ((2 * M_PI) / menu->nslices);
+	c = b * slice->slicen;
+
+	p = emalloc((n + 2) * sizeof *p);
+	p[0].x = pie.radius;
+	p[0].y = pie.radius;
+	for (i = 0; i < n + 1; i++) {
+		p[i+1].x = pie.radius + (pie.radius + 1) * cos((i - (n / 2.0)) * a - c);
+		p[i+1].y = pie.radius + (pie.radius + 1) * sin((i - (n / 2.0)) * a - c);
+	}
+	
+	XRenderCompositeDoublePoly(dpy, PictOpOver, pie.selbg, slice->picture,
+	                           XRenderFindStandardFormat(dpy, PictStandardA8),
+	                           0, 0, 0, 0, p, n + 2, 0);
+
+	free(p);
+}
+
+/* draw circle */
+static void
+drawcircle(Picture picture, int radius)
+{
+	XPointDouble *p;
+	int i, n;
+	double hd, a;
+
+	/* determine number of segments to draw */
+	hd = hypot(radius, radius)/2;
+	n = ((2 * M_PI) / (acos(hd/(hd+1.0)))) + 0.5;
+
+	/* angles */
+	a = ((2 * M_PI) / n);
+
+	p = emalloc((n + 2) * sizeof *p);
+	p[0].x = pie.radius;
+	p[0].y = pie.radius;
+	for (i = 0; i < n + 1; i++) {
+		p[i+1].x = pie.radius + (radius + 1) * cos(i * a);
+		p[i+1].y = pie.radius + (radius + 1) * sin(i * a);
+	}
+	
+	XRenderCompositeDoublePoly(dpy, PictOpOver, pie.bg, picture,
+	                           XRenderFindStandardFormat(dpy, PictStandardA8),
+	                           0, 0, 0, 0, p, n + 2, 0);
+
+	free(p);
+}
+
+/* draw separator before slice */
+static void
+drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
+{
+	XPointDouble p[4];
+	double a;
+
+	a = (M_PI / menu->nslices) + ((2 * M_PI) / menu->nslices) * slice->slicen;
+	p[0].x = pie.radius + pie.separatorbeg * cos(a - pie.innerangle);
+	p[0].y = pie.radius + pie.separatorbeg * sin(a - pie.innerangle);
+	p[1].x = pie.radius + pie.separatorbeg * cos(a + pie.innerangle);
+	p[1].y = pie.radius + pie.separatorbeg * sin(a + pie.innerangle);
+	p[2].x = pie.radius + pie.separatorend * cos(a + pie.outerangle);
+	p[2].y = pie.radius + pie.separatorend * sin(a + pie.outerangle);
+	p[3].x = pie.radius + pie.separatorend * cos(a - pie.outerangle);
+	p[3].y = pie.radius + pie.separatorend * sin(a - pie.outerangle);
+	XRenderCompositeDoublePoly(dpy, PictOpOver, pie.separator, picture,
+	                           XRenderFindStandardFormat(dpy, PictStandardA8),
+	                           0, 0, 0, 0, p, 4, 0);
+}
+
 /* draw regular slice */
 static void
 drawmenu(struct Menu *menu, struct Slice *selected)
@@ -949,27 +1032,22 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	XftColor *color;
 	XftDraw *draw;
 	Drawable pixmap;
+	Picture picture;
 
 	if (selected) {
 		pixmap = selected->pixmap;
+		picture = selected->picture;
 		selected->drawn = 1;
 	} else {
 		pixmap = menu->pixmap;
+		picture = menu->picture;
 		menu->drawn = 1;
 	}
 
-	/* draw slice background */
-	for (slice = menu->list; slice; slice = slice->next) {
-		if (slice == selected)
-			color = dc.selected;
-		else
-			color = dc.normal;
-
-		XSetForeground(dpy, dc.gc, color[ColorBG].pixel);
-		XFillArc(dpy, pixmap, dc.gc, 0, 0,
-			     pie.diameter, pie.diameter,
-			     slice->angle1, slice->angle2);
-	}
+	/* draw background */
+	XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
+	XFillRectangle(dpy, pixmap, dc.gc, 0, 0, pie.diameter, pie.diameter);
+	drawslice(menu, selected);
 
 	/* draw slice foreground */
 	for (slice = menu->list; slice; slice = slice->next) {
@@ -991,18 +1069,11 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		}
 
 		/* draw separator */
-		XSetForeground(dpy, dc.gc, dc.separator.pixel);
-		XDrawLine(dpy, pixmap, dc.gc,
-		          slice->linexi, slice->lineyi,
-		          slice->linexo, slice->lineyo);
+		drawseparator(picture, menu, slice);
 	}
 
 	/* draw inner circle */
-	XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
-	XFillArc(dpy, pixmap, dc.gc,
-	         pie.innercirclex, pie.innercircley,
-	         pie.innercirclediameter, pie.innercirclediameter,
-	         0, 360 * 64);
+	drawcircle(picture, pie.separatorbeg);
 }
 
 /* draw slices of the current menu and of its ancestors */
@@ -1273,6 +1344,7 @@ main(int argc, char *argv[])
 	rootwin = RootWindow(dpy, screen);
 	colormap = DefaultColormap(dpy, screen);
 	depth = DefaultDepth(dpy, screen);
+	xformat = XRenderFindVisualFormat(dpy, visual);
 	if ((xrm = XResourceManagerString(dpy)) != NULL)
 		xdb = XrmGetStringDatabase(xrm);
 
