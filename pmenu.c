@@ -688,8 +688,8 @@ setslices(struct Menu *menu)
 			int iconsize;           /* requested icon size */
 			int xdiff, ydiff;
 
-			xdiff = pie.radius * 0.5 - (pie.radius * (cos(menu->half) * 0.75));
-			ydiff = pie.radius * (sin(menu->half) * 0.75);
+			xdiff = pie.radius * 0.5 - (pie.radius * (cos(menu->half) * 0.8));
+			ydiff = pie.radius * (sin(menu->half) * 0.8);
 
 			iconsize = sqrt(xdiff * xdiff + ydiff * ydiff);
 			iconsize = MIN(maxiconsize, iconsize);
