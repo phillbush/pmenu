@@ -36,6 +36,7 @@ static struct Pie pie;
 static int rflag = 0;           /* whether to run in root mode */
 static int pflag = 0;           /* whether to pass click to root window */
 static unsigned int button;     /* button to trigger pmenu in root mode */
+static unsigned int modifier;   /* modifier to trigger pmenu */
 
 #include "config.h"
 
@@ -43,7 +44,7 @@ static unsigned int button;     /* button to trigger pmenu in root mode */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-p] [-r button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-p] [-m modifier] [-r button]\n");
 	exit(1);
 }
 
@@ -84,10 +85,32 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "pr:")) != -1) {
+	while ((ch = getopt(*argc, *argv, "pm:r:")) != -1) {
 		switch (ch) {
 		case 'p':
 			pflag = 1;
+			break;
+		case 'm':
+			switch (*optarg) {
+			case '1':
+				modifier = Mod1Mask;
+				break;
+			case '2':
+				modifier = Mod2Mask;
+				break;
+			case '3':
+				modifier = Mod3Mask;
+				break;
+			case '4':
+				modifier = Mod4Mask;
+				break;
+			case '5':
+				modifier = Mod5Mask;
+				break;
+			default:
+				modifier = Mod1Mask;
+				break;
+			}
 			break;
 		case 'r':
 			rflag = 1;
@@ -1161,8 +1184,8 @@ run(struct Menu *rootmenu)
 	do {
 		while (!XNextEvent(dpy, &ev)) {
 			if (rflag && !mapped && ev.type == ButtonPress) {
-				if (ev.xbutton.subwindow == None) {
-					if (pflag)
+				if (ev.xbutton.state == modifier || ev.xbutton.subwindow == None) {
+					if (pflag && ev.xbutton.state == 0)
 						XAllowEvents(dpy, ReplayPointer, CurrentTime);
 					mapped = 1;
 					getmonitor();
@@ -1365,7 +1388,7 @@ main(int argc, char *argv[])
 
 	/* if running in root mode, get button presses from root window */
 	if (rflag)
-		XGrabButton(dpy, button, 0, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
+		XGrabButton(dpy, button, AnyModifier, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
 
 	/* generate menus and set them up */
 	rootmenu = parsestdin();
