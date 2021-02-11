@@ -16,6 +16,21 @@ The pie menu contains one slice for each item.
 .PP
 The options are as follows:
 .TP
+.BI "\-m " modifier
+Use the button click specified by the
+.B \-r
+option with the given modifier number
+to spawn the pie menu.
+For example,
+if calling pmenu with
+.B -r 3 -m 4
+options,
+the pie menu will be displayed when clicking any window with the right mouse button
+and the Mod4 modifier (usually the Super key).
+This option only makes sense when
+.B \-r
+is used.
+.TP
 .B \-p
 When
 .B \-r
@@ -26,7 +41,7 @@ This option only makes sense when
 .B \-r
 is used.
 .TP
-.BI "\-r " buton
+.BI "\-r " button
 When this option is used,
 .B pmenu
 listens to button presses on the root window,
