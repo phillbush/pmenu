@@ -966,62 +966,41 @@ static void
 drawslice(struct Menu *menu, struct Slice *slice)
 {
 	XPointDouble *p;
-	int i, n;
-	double hd, a, b, c;
+	int i, outer, inner, npoints;
+	double h, a, b;
 
 	if (slice == NULL)
 		return;
 
 	/* determine number of segments to draw */
-	hd = hypot(pie.radius, pie.radius)/2;
-	n = ((2 * M_PI) / (menu->nslices * acos(hd/(hd+1.0)))) + 0.5;
+	h = hypot(pie.radius, pie.radius)/2;
+	outer = ((2 * M_PI) / (menu->nslices * acos(h/(h+1.0)))) + 0.5;
+	outer = (outer < 3) ? 3 : outer;
+	h = hypot(pie.separatorbeg, pie.separatorbeg)/2;
+	inner = ((2 * M_PI) / (menu->nslices * acos(h/(h+1.0)))) + 0.5;
+	inner = (inner < 3) ? 3 : inner;
+	npoints = inner + outer + 2;
+	p = emalloc(npoints * sizeof *p);
 
-	/* angles */
-	a = ((2 * M_PI) / (menu->nslices * n));
-	b = ((2 * M_PI) / menu->nslices);
-	c = b * slice->slicen;
+	b = ((2 * M_PI) / menu->nslices) * slice->slicen;
 
-	p = emalloc((n + 2) * sizeof *p);
-	p[0].x = pie.radius;
-	p[0].y = pie.radius;
-	for (i = 0; i < n + 1; i++) {
-		p[i+1].x = pie.radius + (pie.radius + 1) * cos((i - (n / 2.0)) * a - c);
-		p[i+1].y = pie.radius + (pie.radius + 1) * sin((i - (n / 2.0)) * a - c);
+	/* outer points */
+	a = ((2 * M_PI) / (menu->nslices * outer));
+	for (i = 0; i <= outer; i++) {
+		p[i].x = pie.radius + (pie.radius + 1) * cos((i - (outer / 2.0)) * a - b);
+		p[i].y = pie.radius + (pie.radius + 1) * sin((i - (outer / 2.0)) * a - b);
+	}
+
+	/* inner points */
+	a = ((2 * M_PI) / (menu->nslices * inner));
+	for (i = 0; i <= inner; i++) {
+		p[i + outer + 1].x = pie.radius + pie.separatorbeg * cos(((inner - i) - (inner / 2.0)) * a - b);
+		p[i + outer + 1].y = pie.radius + pie.separatorbeg * sin(((inner - i) - (inner / 2.0)) * a - b);
 	}
 	
 	XRenderCompositeDoublePoly(dpy, PictOpOver, pie.selbg, slice->picture,
 	                           XRenderFindStandardFormat(dpy, PictStandardA8),
-	                           0, 0, 0, 0, p, n + 2, 0);
-
-	free(p);
-}
-
-/* draw circle */
-static void
-drawcircle(Picture picture, int radius)
-{
-	XPointDouble *p;
-	int i, n;
-	double hd, a;
-
-	/* determine number of segments to draw */
-	hd = hypot(radius, radius)/2;
-	n = ((2 * M_PI) / (acos(hd/(hd+1.0)))) + 0.5;
-
-	/* angles */
-	a = ((2 * M_PI) / n);
-
-	p = emalloc((n + 2) * sizeof *p);
-	p[0].x = pie.radius;
-	p[0].y = pie.radius;
-	for (i = 0; i < n + 1; i++) {
-		p[i+1].x = pie.radius + (radius + 1) * cos(i * a);
-		p[i+1].y = pie.radius + (radius + 1) * sin(i * a);
-	}
-	
-	XRenderCompositeDoublePoly(dpy, PictOpOver, pie.bg, picture,
-	                           XRenderFindStandardFormat(dpy, PictStandardA8),
-	                           0, 0, 0, 0, p, n + 2, 0);
+	                           0, 0, 0, 0, p, npoints, 0);
 
 	free(p);
 }
@@ -1094,9 +1073,6 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		/* draw separator */
 		drawseparator(picture, menu, slice);
 	}
-
-	/* draw inner circle */
-	drawcircle(picture, pie.separatorbeg);
 }
 
 /* draw slices of the current menu and of its ancestors */
