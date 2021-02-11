@@ -44,7 +44,7 @@ static unsigned int modifier;   /* modifier to trigger pmenu */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-p] [-m modifier] [-r button]\n");
+	(void)fprintf(stderr, "usage: pmenu [[-p] [-m modifier] -r button]\n");
 	exit(1);
 }
 
