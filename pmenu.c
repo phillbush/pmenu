@@ -1187,7 +1187,6 @@ run(struct Menu *rootmenu)
 				if (menu == NULL)
 					break;
 				prevmenu = mapmenu(currmenu, prevmenu);
-				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 				copymenu(currmenu);
 				break;
 			case LeaveNotify:
