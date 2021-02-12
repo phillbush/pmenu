@@ -3,7 +3,7 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
-.RB [ \-p ]
+.RB [ \-pw ]
 .RB [ \-r
 .IR button ]
 .SH DESCRIPTION
@@ -50,6 +50,12 @@ This option makes
 .B pmenu
 run continuously,
 so it should be run in background on a X startup file (like ~/.xinitrc, ~/.xprofile, etc).
+.TP
+.B \-w
+Disable pointer warping when a new submenu spawns.
+This option is useful when using
+.B pmenu
+with a Wacom tablet.
 .PP
 Each item read from stdin has the following format:
 .IP

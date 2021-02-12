@@ -33,6 +33,7 @@ static struct Monitor mon;
 static struct Pie pie;
 
 /* flags */
+static int wflag = 0;           /* whether to disable pointer warping */
 static int rflag = 0;           /* whether to run in root mode */
 static int pflag = 0;           /* whether to pass click to root window */
 static unsigned int button;     /* button to trigger pmenu in root mode */
@@ -44,7 +45,7 @@ static unsigned int modifier;   /* modifier to trigger pmenu */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [[-p] [-m modifier] -r button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-w] [-r button [-p] [-m modifier]]\n");
 	exit(1);
 }
 
@@ -85,7 +86,7 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "pm:r:")) != -1) {
+	while ((ch = getopt(*argc, *argv, "pm:r:w")) != -1) {
 		switch (ch) {
 		case 'p':
 			pflag = 1;
@@ -134,6 +135,9 @@ getoptions(int *argc, char ***argv)
 				button = Button3;
 				break;
 			}
+			break;
+		case 'w':
+			wflag = 1;
 			break;
 		default:
 			usage();
@@ -1225,9 +1229,10 @@ run(struct Menu *rootmenu)
 					goto done;
 				}
 				prevmenu = mapmenu(currmenu, prevmenu);
-				currmenu->selected = currmenu->list;
+				currmenu->selected = NULL;
 				copymenu(currmenu);
-				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+				if (!wflag)
+					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 				break;
 			case ButtonPress:
 				menu = getmenu(currmenu, ev.xbutton.window);
