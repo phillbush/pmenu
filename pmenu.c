@@ -41,7 +41,7 @@ static int wflag = 0;           /* whether to disable pointer warping */
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-w] [-r button [-p] [-m modifier]]\n");
+	(void)fprintf(stderr, "usage: pmenu [-w]\n");
 	exit(1);
 }
 
@@ -82,7 +82,7 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "pm:r:w")) != -1) {
+	while ((ch = getopt(*argc, *argv, "w")) != -1) {
 		switch (ch) {
 		case 'w':
 			wflag = 1;
