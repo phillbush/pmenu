@@ -33,6 +33,7 @@ static struct Monitor mon;
 static struct Pie pie;
 
 /* flags */
+static int tflag = 0;           /* whether to draw triangle for submenus */
 static int wflag = 0;           /* whether to disable pointer warping */
 
 #include "config.h"
@@ -82,8 +83,11 @@ getoptions(int *argc, char ***argv)
 {
 	int ch;
 
-	while ((ch = getopt(*argc, *argv, "w")) != -1) {
+	while ((ch = getopt(*argc, *argv, "tw")) != -1) {
 		switch (ch) {
+		case 't':
+			tflag = 1;
+			break;
 		case 'w':
 			wflag = 1;
 			break;
@@ -149,7 +153,7 @@ static void
 initdc(void)
 {
 	XGCValues values;
-	Pixmap pbg, pselbg, separator;
+	Pixmap pbg, pfg, pselbg, pselfg, separator;
 	unsigned long valuemask;
 
 	/* get color pixels */
@@ -173,16 +177,24 @@ initdc(void)
 	dc.pictattr.repeat = 1;
 	dc.pictattr.poly_edge = PolyEdgeSmooth;
 	pbg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
+	pfg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
 	pselbg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
+	pselfg = XCreatePixmap(dpy, rootwin, 1, 1, depth);
 	separator = XCreatePixmap(dpy, rootwin, 1, 1, depth);
 	pie.bg = XRenderCreatePicture(dpy, pbg, xformat, CPRepeat, &dc.pictattr);
+	pie.fg = XRenderCreatePicture(dpy, pfg, xformat, CPRepeat, &dc.pictattr);
 	pie.selbg = XRenderCreatePicture(dpy, pselbg, xformat, CPRepeat, &dc.pictattr);
+	pie.selfg = XRenderCreatePicture(dpy, pselfg, xformat, CPRepeat, &dc.pictattr);
 	pie.separator = XRenderCreatePicture(dpy, separator, xformat, CPRepeat, &dc.pictattr);
 	XRenderFillRectangle(dpy, PictOpOver, pie.bg, &dc.normal[ColorBG].color, 0, 0, 1, 1);
+	XRenderFillRectangle(dpy, PictOpOver, pie.fg, &dc.normal[ColorFG].color, 0, 0, 1, 1);
 	XRenderFillRectangle(dpy, PictOpOver, pie.selbg, &dc.selected[ColorBG].color, 0, 0, 1, 1);
+	XRenderFillRectangle(dpy, PictOpOver, pie.selfg, &dc.selected[ColorFG].color, 0, 0, 1, 1);
 	XRenderFillRectangle(dpy, PictOpOver, pie.separator, &dc.separator.color, 0, 0, 1, 1);
 	XFreePixmap(dpy, pbg);
+	XFreePixmap(dpy, pfg);
 	XFreePixmap(dpy, pselbg);
+	XFreePixmap(dpy, pselfg);
 	XFreePixmap(dpy, separator);
 }
 
@@ -198,6 +210,11 @@ initpie(void)
 	pie.diameter = config.diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
+
+	/* set the geometry of the triangle for submenus */
+	pie.triangleouter = pie.radius - config.triangle_distance;
+	pie.triangleinner = pie.radius - config.triangle_distance - config.triangle_width;
+	pie.triangleangle = ((double)config.triangle_height / 2.0) / (double)pie.triangleinner;
 
 	/* set the separator beginning and end */
 	pie.separatorbeg = pie.radius * config.separatorbeg;
@@ -921,9 +938,6 @@ drawslice(struct Menu *menu, struct Slice *slice)
 	int i, outer, inner, npoints;
 	double h, a, b;
 
-	if (slice == NULL)
-		return;
-
 	/* determine number of segments to draw */
 	h = hypot(pie.radius, pie.radius)/2;
 	outer = ((2 * M_PI) / (menu->nslices * acos(h/(h+1.0)))) + 0.5;
@@ -964,7 +978,7 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	XPointDouble p[4];
 	double a;
 
-	a = (M_PI / menu->nslices) + ((2 * M_PI) / menu->nslices) * slice->slicen;
+	a = -((M_PI + 2 * M_PI * slice->slicen) / menu->nslices);
 	p[0].x = pie.radius + pie.separatorbeg * cos(a - pie.innerangle);
 	p[0].y = pie.radius + pie.separatorbeg * sin(a - pie.innerangle);
 	p[1].x = pie.radius + pie.separatorbeg * cos(a + pie.innerangle);
@@ -978,6 +992,25 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	                           0, 0, 0, 0, p, 4, 0);
 }
 
+/* draw triangle for slice with submenu */
+static void
+drawtriangle(Picture source, Picture picture, struct Menu *menu, struct Slice *slice)
+{
+	XPointDouble p[3];
+	double a;
+
+	a = - (((2 * M_PI) / menu->nslices) * slice->slicen);
+	p[0].x = pie.radius + pie.triangleinner * cos(a - pie.triangleangle);
+	p[0].y = pie.radius + pie.triangleinner * sin(a - pie.triangleangle);
+	p[1].x = pie.radius + pie.triangleouter * cos(a);
+	p[1].y = pie.radius + pie.triangleouter * sin(a);
+	p[2].x = pie.radius + pie.triangleinner * cos(a + pie.triangleangle);
+	p[2].y = pie.radius + pie.triangleinner * sin(a + pie.triangleangle);
+	XRenderCompositeDoublePoly(dpy, PictOpOver, source, picture,
+	                           XRenderFindStandardFormat(dpy, PictStandardA8),
+	                           0, 0, 0, 0, p, 3, 0);
+}
+
 /* draw regular slice */
 static void
 drawmenu(struct Menu *menu, struct Slice *selected)
@@ -987,6 +1020,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	XftDraw *draw;
 	Drawable pixmap;
 	Picture picture;
+	Picture source;
 
 	if (selected) {
 		pixmap = selected->pixmap;
@@ -1001,14 +1035,18 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	/* draw background */
 	XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
 	XFillRectangle(dpy, pixmap, dc.gc, 0, 0, pie.diameter, pie.diameter);
-	drawslice(menu, selected);
+	if (selected)
+		drawslice(menu, selected);
 
 	/* draw slice foreground */
 	for (slice = menu->list; slice; slice = slice->next) {
-		if (slice == selected)
+		if (slice == selected) {
 			color = dc.selected;
-		else
+			source = pie.selfg;
+		} else {
 			color = dc.normal;
+			source = pie.fg;
+		}
 
 		if (slice->file) {      /* if there is an icon, draw it */
 			imlib_context_set_drawable(pixmap);
@@ -1024,6 +1062,11 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 
 		/* draw separator */
 		drawseparator(picture, menu, slice);
+
+		/* draw triangle */
+		if (slice->submenu && tflag) {
+			drawtriangle(source, picture, menu, slice);
+		}
 	}
 }
 
@@ -1243,6 +1286,17 @@ cleanmenu(struct Menu *menu)
 	free(menu);
 }
 
+/* free pictures */
+static void
+cleanpictures(void)
+{
+	XRenderFreePicture(dpy, pie.bg);
+	XRenderFreePicture(dpy, pie.fg);
+	XRenderFreePicture(dpy, pie.selbg);
+	XRenderFreePicture(dpy, pie.selfg);
+	XRenderFreePicture(dpy, pie.separator);
+}
+
 /* cleanup drawing context */
 static void
 cleandc(void)
@@ -1300,6 +1354,7 @@ main(int argc, char *argv[])
 
 	/* freeing stuff */
 	cleanmenu(rootmenu);
+	cleanpictures();
 	cleandc();
 	XCloseDisplay(dpy);
 

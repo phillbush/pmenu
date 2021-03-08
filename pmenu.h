@@ -20,6 +20,9 @@ struct Config {
 	const char *border_color;
 	int border_pixels;
 	int separator_pixels;
+	int triangle_width;
+	int triangle_height;
+	int triangle_distance;
 	unsigned diameter_pixels;
 	double separatorbeg;
 	double separatorend;
@@ -98,12 +101,17 @@ struct Pie {
 	int radius;         /* radius of the pie */
 	int border;         /* border of the pie */
 
+	int triangleinner;
+	int triangleouter;
 	int separatorbeg;
 	int separatorend;
+	double triangleangle;
 	double innerangle;
 	double outerangle;
 
 	Picture bg;
+	Picture fg;
 	Picture selbg;
+	Picture selfg;
 	Picture separator;
 };

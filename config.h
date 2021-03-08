@@ -19,5 +19,15 @@ static struct Config config = {
 
 	/* sizes between 0 and 1 */
 	.separatorbeg = 0.14,  /* beginning of the separator */
-	.separatorend = 0.37   /* end of the separator */
+	.separatorend = 0.37,  /* end of the separator */
+
+	/*
+	 * The variables below cannot be set by X resources.
+	 * Their values must be less than .height_pixels.
+	 */
+
+	/* geometry of the right-pointing isoceles triangle for submenus */
+	.triangle_width = 3,
+	.triangle_height = 7,
+	.triangle_distance = 6  /* distance from the border of the menu */
 };
