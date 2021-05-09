@@ -3,7 +3,11 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
-.RB [ \-tw ]
+.RB [ \-ptw ]
+.RB [ \-m
+.IR modifier ]
+.RB [ \-r
+.IR button ]
 .SH DESCRIPTION
 .B pmenu
 is a pie menu for X,
@@ -13,6 +17,41 @@ and outputs the item selected to stdout.
 The pie menu contains one slice for each item.
 .PP
 The options are as follows:
+.TP
+.BI "\-m " modifier
+Use the button click specified by the
+.B \-r
+option with the given modifier number to spawn the pie menu.
+For example, if calling pmenu with the
+.B -r 3 -m 4
+options,
+the pie menu will be displayed when clicking any window with the right mouse button
+and the Mod4 modifier (usually the Super key).
+this option only makes sense when
+.B \-r
+is used.
+.TP
+.B \-p
+When
+.B \-r
+is used, pass the click to the root window,
+for the window manage to use it, for example.
+This option only makes sense when
+.B \-r
+is used.
+.TP
+.B \-r
+When this option is used,
+.B pmenu
+listens to button presses on the root window,
+and shows the pie menu when the button (a number between 1 and 3) is pressed on the root window.
+This option makes
+.B menu
+run continuously,
+so it should be run in background on a X startup file (like
+.BR "~/.xinitrc" ,
+.BR "~/.xprofile" ,
+etc).
 .TP
 .B \-t
 Draw a triangle on the border of slices that spawn a submenu.
