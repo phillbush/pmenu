@@ -1,0 +1,45 @@
+                               CHANGELOG
+
+2.3.0 (2021-05-09).
+• Added CHANGELOG.
+• Added -m option.
+• Added -t option to draw triangles on slices with submenus.
+• Added -w option for Wacom support (#8).
+• Fixed mouse control (now only Button1 and Button3 select slices).
+• Fixed cursor jumping (#7).
+
+2.2.0 (2021-02-05).
+• Added pmenu.h.
+• Added -r option to listen for button presses on root window.
+• Added -p option to pass click to root window.
+• Added functions using XRender to draw anti-aliased graphics.
+
+2.1.3 (2020-10-06).
+• Fixed delay when using lots of icons.
+• Fixed code to free slices pixmaps.
+• Fixed Makefile by removing -D flag of install(1) and making it portable (#4).
+
+2.1.2 (2020-09-13).
+• Added LICENSE.
+• Fixed code to free monitor information when done with it.
+
+2.1.1 (2020-08-19).
+• Fixed menu placement.
+
+2.1.0 (2020-08-19).
+• Fixed error messages.
+• Fixed compilation warnings in gcc (#3).
+
+2.0.0 (2020-08-02).
+• Added config.mk.
+• Added config.h.
+• Added support for multi-monitors.
+• Added drawtext() and getfontucode() functions.
+• Changed README to README.md.
+• Fixed Makefile (#2).
+
+1.1.0 (2020-06-14).
+• Fixed position calculation.
+
+1.0.0 (2020-06-13).
+• First version.
