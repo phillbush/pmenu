@@ -35,7 +35,6 @@ static struct Pie pie;
 /* flags */
 static int rflag = 0;           /* wheter to run in root mode */
 static int pflag = 0;           /* whether to pass click to root window */
-static int tflag = 0;           /* whether to draw triangle for submenus */
 static int wflag = 0;           /* whether to disable pointer warping */
 static unsigned int button;     /* button to trigger pmenu in root mode */
 static unsigned int modifier;   /* modifier to trigger pmenu */
@@ -126,9 +125,6 @@ getoptions(int *argc, char ***argv)
 				button = Button3;
 				break;
 			}
-			break;
-		case 't':
-			tflag = 1;
 			break;
 		case 'w':
 			wflag = 1;
@@ -1115,7 +1111,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		drawseparator(picture, menu, slice);
 
 		/* draw triangle */
-		if ((slice->submenu || slice->iscmd) && tflag) {
+		if (slice->submenu || slice->iscmd) {
 			drawtriangle(source, picture, menu, slice);
 		}
 	}
