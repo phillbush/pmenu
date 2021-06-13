@@ -9,6 +9,9 @@
 /* color enum */
 enum {ColorFG, ColorBG, ColorLast};
 
+/* state of command to popen */
+enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
+
 /* configuration structure */
 struct Config {
 	const char *font;
@@ -50,6 +53,7 @@ struct Slice {
 	char *output;           /* string to be outputed when slice is clicked */
 	char *file;             /* filename of the icon */
 	size_t labellen;        /* strlen(label) */
+	int iscmd;              /* whether output is actually a command to popen */
 
 	unsigned slicen;
 	int x, y;               /* position of the pointer of the slice */
@@ -76,7 +80,7 @@ struct Menu {
 	unsigned nslices;       /* number of slices */
 	int x, y;               /* menu position */
 	double half;            /* angle of half a slice of the pie menu */
-	unsigned level;         /* menu level relative to root */
+	int level;              /* menu level relative to root */
 
 	int drawn;              /* whether the pixmap have been drawn */
 	Drawable pixmap;        /* pixmap to draw the menu on */

@@ -317,20 +317,28 @@ allocslice(const char *label, const char *output, char *file)
 
 	slice = emalloc(sizeof *slice);
 	slice->label = label ? estrdup(label) : NULL;
-	slice->output = (label == output) ? slice->label : estrdup(output);
 	slice->file = file ? estrdup(file) : NULL;
 	slice->y = 0;
 	slice->labellen = (slice->label) ? strlen(slice->label) : 0;
 	slice->next = NULL;
 	slice->submenu = NULL;
 	slice->icon = NULL;
-
+	if (output && *output == '$') {
+		output++;
+		while (isspace(*output))
+			output++;
+		slice->output = estrdup(output);
+		slice->iscmd = CMD_NOTRUN;
+	} else {
+		slice->output = (label == output) ? slice->label : estrdup(output);
+		slice->iscmd = NO_CMD;
+	}
 	return slice;
 }
 
 /* allocate a menu */
 static struct Menu *
-allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
+allocmenu(struct Menu *parent, struct Slice *list, int level)
 {
 	XSetWindowAttributes swa;
 	XClassHint classh = {PROGNAME, PROGNAME};
@@ -381,14 +389,16 @@ allocmenu(struct Menu *parent, struct Slice *list, unsigned level)
 
 /* build the menu tree */
 static struct Menu *
-buildmenutree(unsigned level, const char *label, const char *output, char *file)
+buildmenutree(struct Menu *rootmenu, int level, const char *label, const char *output, char *file)
 {
-	static struct Menu *prevmenu = NULL;    /* menu the previous slice was added to */
-	static struct Menu *rootmenu = NULL;    /* menu to be returned */
-	struct Slice *currslice = NULL;           /* slice currently being read */
-	struct Slice *slice;                      /* dummy slice for loops */
+	static struct Menu *prevmenu;           /* menu the previous slice was added to */
+	struct Slice *currslice = NULL;         /* slice currently being read */
+	struct Slice *slice;                    /* dummy slice for loops */
 	struct Menu *menu;                      /* dummy menu for loops */
-	unsigned i;
+	int i;
+
+	if (rootmenu == NULL)
+		prevmenu = NULL;
 
 	/* create the slice */
 	currslice = allocslice(label, output, file);
@@ -442,16 +452,15 @@ buildmenutree(unsigned level, const char *label, const char *output, char *file)
 
 /* create menus and slices from the stdin */
 static struct Menu *
-parsestdin(void)
+parse(FILE *fp, int initlevel)
 {
 	struct Menu *rootmenu;
 	char *s, buf[BUFSIZ];
 	char *file, *label, *output;
-	unsigned level = 0;
+	int level;
 
 	rootmenu = NULL;
-
-	while (fgets(buf, BUFSIZ, stdin) != NULL) {
+	while (fgets(buf, BUFSIZ, fp) != NULL) {
 		/* get the indentation level */
 		level = strspn(buf, "\t");
 
@@ -478,7 +487,7 @@ parsestdin(void)
 				output++;
 		}
 
-		rootmenu = buildmenutree(level, label, output, file);
+		rootmenu = buildmenutree(rootmenu, initlevel + level, label, output, file);
 	}
 
 	return rootmenu;
@@ -914,8 +923,8 @@ mapmenu(struct Menu *currmenu, struct Menu *prevmenu)
 {
 	struct Menu *menu, *menu_;
 	struct Menu *lcamenu;   /* lowest common ancestor menu */
-	unsigned minlevel;      /* level of the closest to root menu */
-	unsigned maxlevel;      /* level of the closest to root menu */
+	int minlevel;           /* level of the closest to root menu */
+	int maxlevel;           /* level of the closest to root menu */
 
 	/* do not remap current menu if it wasn't updated*/
 	if (prevmenu == currmenu)
@@ -1106,7 +1115,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		drawseparator(picture, menu, slice);
 
 		/* draw triangle */
-		if (slice->submenu && tflag) {
+		if ((slice->submenu || slice->iscmd) && tflag) {
 			drawtriangle(source, picture, menu, slice);
 		}
 	}
@@ -1162,6 +1171,80 @@ slicecycle(struct Menu *currmenu, int clockwise)
 			slice = currmenu->list;
 	}
 	return slice;
+}
+
+/* recursivelly free pixmaps and destroy windows */
+static void
+cleanmenu(struct Menu *menu)
+{
+	struct Slice *slice;
+	struct Slice *tmp;
+
+	slice = menu->list;
+	while (slice != NULL) {
+		if (slice->submenu != NULL)
+			cleanmenu(slice->submenu);
+		tmp = slice;
+		if (tmp->label != tmp->output)
+			free(tmp->label);
+		free(tmp->output);
+		XFreePixmap(dpy, slice->pixmap);
+		if (tmp->file != NULL) {
+			free(tmp->file);
+			if (tmp->icon != NULL) {
+				imlib_context_set_image(tmp->icon);
+				imlib_free_image();
+			}
+		}
+		slice = slice->next;
+		free(tmp);
+	}
+
+	XFreePixmap(dpy, menu->pixmap);
+	XDestroyWindow(dpy, menu->win);
+	free(menu);
+}
+
+/* clear menus generated via genmenu */
+static void
+cleangenmenu(struct Menu *menu)
+{
+	struct Slice *slice;
+
+	for (slice = menu->list; slice; slice = slice->next) {
+		if (slice->submenu != NULL)
+			cleangenmenu(slice->submenu);
+		if (slice->iscmd == CMD_RUN) {
+			cleanmenu(slice->submenu);
+			slice->iscmd = CMD_NOTRUN;
+			slice->submenu = NULL;
+		}
+	}
+}
+
+/* run command of slice to generate a submenu */
+static struct Menu *
+genmenu(struct Menu *menu, struct Slice *slice)
+{
+	FILE *fp;
+
+	if ((fp = popen(slice->output, "r")) == NULL) {
+		warnx("could not run: %s", slice->output);
+		return NULL;
+	}
+	if ((slice->submenu = parse(fp, menu->level + 1)) == NULL)
+		return NULL;
+	pclose(fp);
+	slice->submenu->parent = menu;
+	slice->submenu->caller = slice;
+	slice->iscmd = CMD_RUN;
+	setslices(slice->submenu);
+	placemenu(slice->submenu);
+	if (slice->submenu->list == NULL) {
+		cleanmenu(slice->submenu);
+		return NULL;
+	}
+	return slice->submenu;
 }
 
 /* ungrab pointer and keyboard */
@@ -1258,6 +1341,10 @@ run(struct Menu *rootmenu)
 	selectslice:
 				if (slice->submenu) {
 					currmenu = slice->submenu;
+				} else if (slice->iscmd == CMD_NOTRUN) {
+					if ((menu = genmenu(menu, slice)) != NULL) {
+						currmenu = menu;
+					}
 				} else {
 					printf("%s\n", slice->output);
 					fflush(stdout);
@@ -1321,40 +1408,10 @@ run(struct Menu *rootmenu)
 		mapped = 0;
 		unmapmenu(currmenu);
 		ungrab();
+		cleangenmenu(rootmenu);
 		XFlush(dpy);
+		currmenu = NULL;
 	} while (rflag);
-}
-
-/* recursivelly free pixmaps and destroy windows */
-static void
-cleanmenu(struct Menu *menu)
-{
-	struct Slice *slice;
-	struct Slice *tmp;
-
-	slice = menu->list;
-	while (slice != NULL) {
-		if (slice->submenu != NULL)
-			cleanmenu(slice->submenu);
-		tmp = slice;
-		if (tmp->label != tmp->output)
-			free(tmp->label);
-		free(tmp->output);
-		XFreePixmap(dpy, slice->pixmap);
-		if (tmp->file != NULL) {
-			free(tmp->file);
-			if (tmp->icon != NULL) {
-				imlib_context_set_image(tmp->icon);
-				imlib_free_image();
-			}
-		}
-		slice = slice->next;
-		free(tmp);
-	}
-
-	XFreePixmap(dpy, menu->pixmap);
-	XDestroyWindow(dpy, menu->win);
-	free(menu);
 }
 
 /* free pictures */
@@ -1419,7 +1476,7 @@ main(int argc, char *argv[])
 		XGrabButton(dpy, button, AnyModifier, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
 
 	/* generate menus and set them up */
-	rootmenu = parsestdin();
+	rootmenu = parse(stdin, 0);
 	if (rootmenu == NULL)
 		errx(1, "no menu generated");
 	setslices(rootmenu);

@@ -85,6 +85,12 @@ The label is the string that will be shown as a item in the menu.
 .IP
 The output is the string that will be output after selecting the item.
 If an item does not have an output, its label is used as its output.
+If the output begins with the $ character, than this string represents a command
+that will be run by
+.B pmenu
+using 
+.IR popen (3)
+and whose output will be used to generate a submenu.
 .IP
 The newline terminates the item specification.
 .SH USAGE
