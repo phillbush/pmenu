@@ -3,7 +3,7 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
-.RB [ \-ptw ]
+.RB [ \-pw ]
 .RB [ \-m
 .IR modifier ]
 .RB [ \-r
@@ -62,23 +62,24 @@ with a Wacom tablet.
 Each item read from stdin has the following format:
 .IP
 .EX
-ITEM := [TABS] (IMAGE|LABEL) [TABS OUTPUT] NEWLINE
+ITEM := [TABS] [IMAGE TABS] LABEL [TABS OUTPUT] NEWLINE
 .EE
 .PP
-That means that each item is composed by
-tabs, followed by an optional image specificationor a label, followed by
-more tabs, followed by an output, and ended by a newline.  Brackets
-group optional elements; vertical line (|) separates elements that
-cannot be used together.
+That means that each item is composed by tabs,
+followed by an image specification, followed by more tabs and a label,
+followed by more tabs and an output, and ended by a newline.
+Brackets group optional elements.
 .IP
 The initial tabs indicate the menu hierarchy:
-items indented with a tab is shown in a submenu of the preceding item not indented.
+items indented with a tab are shown in a submenu of the preceding item not indented.
 An item without initial tabs is a top-level item.
 .IP
 The image is a string of the form "IMG:/path/to/image.png".
 It specifies a image to be shown as icon in the slice.
 .IP
 The label is the string that will be shown as a item in the menu.
+If the item includes a icon, then no label is shown on the menu;
+however, a tooltip with the label pops up when hovering the icon.
 .IP
 The output is the string that will be output after selecting the item.
 If an item does not have an output, its label is used as its output.
@@ -155,22 +156,20 @@ creating a command to be run by the shell.
 
 cat <<EOF | pmenu | sh &
 Applications
-	IMG:./firefox.png	firefox
-	IMG:./chrome.png	chrome
-	IMG:./vivaldi.png	vivaldi
-	IMG:./qute.png		qutebrowser
-	IMG:./otter.png		otterbrowser
-	IMG:./gimp.png	        gimp
-xterm				xterm
-urxvt				urxvt
-st				st
+	IMG:./firefox.png	Firefox Browser		firefox-esr
+	IMG:./chrome.png	Chrome Browser		chromium
+	IMG:./vivaldi.png	Vivaldi Browser		vivaldi
+	IMG:./gimp.png	        Image Editor		gimp
+Terminal (xterm)					xterm
+Terminal (urxvt)					urxvt
+Terminal (st)						st
 
-Shutdown			poweroff
-Reboot				reboot
+Shutdown						poweroff
+Reboot							reboot
 EOF
 .EE
 .PP
 For example, by selecting \(lqApplications\(rq, a new menu will appear.
-Selecting \(lqWeb Browser\(rq in the new menu opens firefox.
+Selecting \(lqFirefox Browser\(rq in the new menu opens firefox.
 .SH SEE ALSO
 .IR xmenu (1)

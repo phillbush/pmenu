@@ -20,7 +20,6 @@ INCS = -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}
 LIBS = -L${LOCALLIB} -L${X11LIB} -lm -lfontconfig -lXft -lX11 -lXinerama -lXrender -lXext -lImlib2
 
 # flags
-CPPFLAGS =
 CFLAGS = -Wall -Wextra ${INCS} ${CPPFLAGS}
 LDFLAGS = ${LIBS}
 

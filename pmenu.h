@@ -1,4 +1,6 @@
-#define PROGNAME "pmenu"
+#define CLASS    "PMenu"
+#define TTPAD    4              /* padding for the tooltip */
+#define TTVERT   30             /* vertical distance from mouse to place tooltip */
 
 /* macros */
 #define LEN(x)              (sizeof (x) / sizeof (x[0]))
@@ -11,6 +13,14 @@ enum {ColorFG, ColorBG, ColorLast};
 
 /* state of command to popen */
 enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
+
+/* atoms */
+enum {
+	NET_WM_WINDOW_TYPE,
+	NET_WM_WINDOW_TYPE_TOOLTIP,
+	NET_WM_WINDOW_TYPE_POPUP_MENU,
+	ATOM_LAST
+};
 
 /* configuration structure */
 struct Config {
@@ -43,12 +53,18 @@ struct DC {
 	FcPattern *pattern;
 	XftFont **fonts;
 	size_t nfonts;
+	int fonth;
 
 	XRenderPictureAttributes pictattr;
 };
 
 /* pie slice structure */
 struct Slice {
+	struct Slice *prev;     /* previous slice */
+	struct Slice *next;     /* next slice */
+	struct Menu *submenu;   /* submenu spawned by clicking on slice */
+	struct Menu *parent;
+
 	char *label;            /* string to be drawed on the slice */
 	char *output;           /* string to be outputed when slice is clicked */
 	char *file;             /* filename of the icon */
@@ -61,14 +77,15 @@ struct Slice {
 	int iconx, icony;       /* position of the icon */
 	double anglea, angleb;  /* angle of the borders of the slice */
 
-	struct Slice *prev;     /* previous slice */
-	struct Slice *next;     /* next slice */
-	struct Menu *submenu;   /* submenu spawned by clicking on slice */
-
 	int drawn;              /* whether the pixmap have been drawn */
 	Drawable pixmap;        /* pixmap containing the pie menu with the slice selected */
 	Picture picture;        /* XRender picture */
 	Imlib_Image icon;       /* icon */
+
+	int ttdrawn;            /* whether the pixmap for the tooltip have been drawn */
+	int ttw;                /* tooltip width */
+	Window tooltip;         /* tooltip that appears when hovering a slice */
+	Drawable ttpix;         /* pixmap for the tooltip */
 };
 
 /* menu structure */
@@ -104,6 +121,7 @@ struct Pie {
 	int diameter;       /* diameter of the pie */
 	int radius;         /* radius of the pie */
 	int border;         /* border of the pie */
+	int tooltiph;
 
 	int triangleinner;
 	int triangleouter;
