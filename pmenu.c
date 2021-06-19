@@ -1499,6 +1499,7 @@ run(struct Menu *rootmenu)
 				if (menu == NULL || slice == NULL)
 					break;
 	selectslice:
+				unmaptooltip(currmenu->selected, &ttmapped);
 				if (slice->submenu) {
 					currmenu = slice->submenu;
 				} else if (slice->iscmd == CMD_NOTRUN) {
@@ -1510,7 +1511,6 @@ run(struct Menu *rootmenu)
 					fflush(stdout);
 					goto done;
 				}
-				unmaptooltip(currmenu->selected, &ttmapped);
 				prevmenu = mapmenu(currmenu, prevmenu);
 				currmenu->selected = NULL;
 				copymenu(currmenu);
@@ -1549,8 +1549,8 @@ run(struct Menu *rootmenu)
 				} else if ((ksym == XK_Escape) &&
 			           	   currmenu->parent != NULL) {
 					slice = currmenu->parent->selected;
-					currmenu = currmenu->parent;
 					unmaptooltip(currmenu->selected, &ttmapped);
+					currmenu = currmenu->parent;
 					prevmenu = mapmenu(currmenu, prevmenu);
 				} else
 					break;
