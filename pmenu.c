@@ -51,7 +51,7 @@ static size_t path_prefix_size;
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-ptw] [-m modifier] [-r button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-pw] [-m modifier] [-r button] [-P image_prefix]\n");
 	exit(1);
 }
 
