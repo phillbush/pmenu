@@ -42,6 +42,9 @@ static int wflag = 0;           /* whether to disable pointer warping */
 static unsigned int button;     /* button to trigger pmenu in root mode */
 static unsigned int modifier;   /* modifier to trigger pmenu */
 
+static char *path_prefix = 0;
+static size_t path_prefix_size;
+
 #include "config.h"
 
 /* show usage */
@@ -94,7 +97,7 @@ getoptions(int argc, char **argv)
 	classh.res_name = argv[0];
 	if ((s = strrchr(argv[0], '/')) != NULL)
 		classh.res_name = s + 1;
-	while ((ch = getopt(argc, argv, "m:pr:tw")) != -1) {
+	while ((ch = getopt(argc, argv, "m:pr:wP:")) != -1) {
 		switch (ch) {
 		case 'm':
 			switch (*optarg) {
@@ -136,6 +139,10 @@ getoptions(int argc, char **argv)
 			break;
 		case 'w':
 			wflag = 1;
+			break;
+		case 'P':
+			path_prefix = optarg;
+			path_prefix_size = strlen(optarg);
 			break;
 		default:
 			usage();
@@ -317,6 +324,21 @@ estrdup(const char *s)
 	return t;
 }
 
+/* as estrdup, but copy a prefix in */
+static char *
+estrdup_prefix(const char *s, const char *prefix, const size_t prefix_size)
+{
+	char *t = malloc(strlen(s) + prefix_size + 1);
+
+	if (!t)
+		err(1, "strdup_prefix");
+
+	strcpy(t, prefix);
+	strcpy(t + prefix_size, s);
+
+	return t;
+}
+
 /* call malloc checking for error */
 static void *
 emalloc(size_t size)
@@ -336,7 +358,13 @@ allocslice(const char *label, const char *output, char *file)
 
 	slice = emalloc(sizeof *slice);
 	slice->label = label ? estrdup(label) : NULL;
-	slice->file = file ? estrdup(file) : NULL;
+	if (!file) {
+		slice->file = NULL;
+	} else if (path_prefix && *file != '/') {
+		slice->file = estrdup_prefix(file, path_prefix, path_prefix_size);
+	} else {
+		slice->file = estrdup(file);
+	}
 	slice->y = 0;
 	slice->labellen = (slice->label) ? strlen(slice->label) : 0;
 	slice->next = NULL;
