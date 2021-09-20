@@ -1437,7 +1437,7 @@ run(struct Menu *rootmenu)
 				goto time;
 			XNextEvent(dpy, &ev);
 			if (rflag && !mapped && ev.type == ButtonPress) {
-				if (ev.xbutton.state == modifier || ev.xbutton.subwindow == None) {
+				if ((modifier && ev.xbutton.state == modifier) || ev.xbutton.subwindow == None) {
 					if (pflag && ev.xbutton.state == 0)
 						XAllowEvents(dpy, ReplayPointer, CurrentTime);
 					mapped = 1;
@@ -1454,6 +1454,8 @@ run(struct Menu *rootmenu)
 				}
 				continue;
 			}
+			if (currmenu == NULL)
+				continue;
 			switch (ev.type) {
 			case Expose:
 				if (ev.xexpose.count == 0) {
