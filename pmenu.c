@@ -324,6 +324,17 @@ estrdup(const char *s)
 	return t;
 }
 
+/* call malloc checking for error */
+static void *
+emalloc(size_t size)
+{
+	void *p;
+
+	if ((p = malloc(size)) == NULL)
+		err(1, "malloc");
+	return p;
+}
+
 /* as estrdup, but copy a prefix in */
 static char *
 estrdup_prefix(const char *s, const char *prefix, const size_t prefix_size)
@@ -334,17 +345,6 @@ estrdup_prefix(const char *s, const char *prefix, const size_t prefix_size)
 	strcpy(t + prefix_size, s);
 
 	return t;
-}
-
-/* call malloc checking for error */
-static void *
-emalloc(size_t size)
-{
-	void *p;
-
-	if ((p = malloc(size)) == NULL)
-		err(1, "malloc");
-	return p;
 }
 
 /* allocate an slice */
