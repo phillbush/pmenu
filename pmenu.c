@@ -1485,7 +1485,11 @@ run(struct Menu *rootmenu)
 			switch (ev.type) {
 			case Expose:
 				if (ev.xexpose.count == 0) {
-					if (currmenu->selected != NULL && ev.xexpose.window == currmenu->selected->tooltip) {
+					if (
+						currmenu &&
+						currmenu->selected != NULL &&
+						ev.xexpose.window == currmenu->selected->tooltip
+					) {
 						copytooltip(currmenu->selected);
 					} else if (currmenu && ev.xexpose.window == currmenu->win) {
 						copymenu(currmenu);
