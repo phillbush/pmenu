@@ -60,8 +60,7 @@ struct DC {
 
 /* pie slice structure */
 struct Slice {
-	struct Slice *prev;     /* previous slice */
-	struct Slice *next;     /* next slice */
+	struct Slice *prev, *next;
 	struct Menu *submenu;   /* submenu spawned by clicking on slice */
 	struct Menu *parent;
 
