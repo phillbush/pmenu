@@ -328,10 +328,7 @@ estrdup(const char *s)
 static char *
 estrdup_prefix(const char *s, const char *prefix, const size_t prefix_size)
 {
-	char *t = malloc(strlen(s) + prefix_size + 1);
-
-	if (!t)
-		err(1, "strdup_prefix");
+	char *t = emalloc(strlen(s) + prefix_size + 1);
 
 	strcpy(t, prefix);
 	strcpy(t + prefix_size, s);
