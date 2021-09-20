@@ -42,7 +42,7 @@ static int wflag = 0;           /* whether to disable pointer warping */
 static unsigned int button;     /* button to trigger pmenu in root mode */
 static unsigned int modifier;   /* modifier to trigger pmenu */
 
-static char *path_prefix = 0;
+static char *path_prefix = NULL;
 static size_t path_prefix_size;
 
 #include "config.h"
@@ -360,7 +360,7 @@ allocslice(const char *label, const char *output, char *file)
 	slice->label = label ? estrdup(label) : NULL;
 	if (!file) {
 		slice->file = NULL;
-	} else if (path_prefix && *file != '/') {
+	} else if (path_prefix && file[0] != '/' && !(file[0] == '.' && file[1] == '/')) {
 		slice->file = estrdup_prefix(file, path_prefix, path_prefix_size);
 	} else {
 		slice->file = estrdup(file);
