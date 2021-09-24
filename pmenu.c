@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -16,7 +15,145 @@
 #include <X11/extensions/shape.h>
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
-#include "pmenu.h"
+
+#define CLASS    "PMenu"
+#define TTPAD    4              /* padding for the tooltip */
+#define TTVERT   30             /* vertical distance from mouse to place tooltip */
+
+/* macros */
+#define LEN(x)              (sizeof (x) / sizeof (x[0]))
+#define MAX(x,y)            ((x)>(y)?(x):(y))
+#define MIN(x,y)            ((x)<(y)?(x):(y))
+#define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
+
+/* color enum */
+enum {ColorFG, ColorBG, ColorLast};
+
+/* state of command to popen */
+enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
+
+/* atoms */
+enum {
+	NET_WM_WINDOW_TYPE,
+	NET_WM_WINDOW_TYPE_TOOLTIP,
+	NET_WM_WINDOW_TYPE_POPUP_MENU,
+	ATOM_LAST
+};
+
+/* configuration structure */
+struct Config {
+	const char *font;
+	const char *background_color;
+	const char *foreground_color;
+	const char *selbackground_color;
+	const char *selforeground_color;
+	const char *separator_color;
+	const char *border_color;
+	int border_pixels;
+	int separator_pixels;
+	int triangle_width;
+	int triangle_height;
+	int triangle_distance;
+	unsigned diameter_pixels;
+	double separatorbeg;
+	double separatorend;
+};
+
+/* draw context structure */
+struct DC {
+	XftColor normal[ColorLast];     /* color of unselected slice */
+	XftColor selected[ColorLast];   /* color of selected slice */
+	XftColor border;                /* color of border */
+	XftColor separator;             /* color of the separator */
+
+	GC gc;                          /* graphics context */
+
+	FcPattern *pattern;
+	XftFont **fonts;
+	size_t nfonts;
+	int fonth;
+
+	XRenderPictureAttributes pictattr;
+};
+
+/* pie slice structure */
+struct Slice {
+	struct Slice *prev, *next;
+	struct Menu *submenu;   /* submenu spawned by clicking on slice */
+	struct Menu *parent;
+
+	char *label;            /* string to be drawed on the slice */
+	char *output;           /* string to be outputed when slice is clicked */
+	char *file;             /* filename of the icon */
+	size_t labellen;        /* strlen(label) */
+	int iscmd;              /* whether output is actually a command to popen */
+
+	unsigned slicen;
+	int x, y;               /* position of the pointer of the slice */
+	int labelx, labely;     /* position of the label */
+	int iconx, icony;       /* position of the icon */
+	double anglea, angleb;  /* angle of the borders of the slice */
+
+	int drawn;              /* whether the pixmap have been drawn */
+	Drawable pixmap;        /* pixmap containing the pie menu with the slice selected */
+	Picture picture;        /* XRender picture */
+	Imlib_Image icon;       /* icon */
+
+	int ttdrawn;            /* whether the pixmap for the tooltip have been drawn */
+	int ttw;                /* tooltip width */
+	Window tooltip;         /* tooltip that appears when hovering a slice */
+	Drawable ttpix;         /* pixmap for the tooltip */
+};
+
+/* menu structure */
+struct Menu {
+	struct Menu *parent;    /* parent menu */
+	struct Slice *caller;   /* slice that spawned the menu */
+	struct Slice *list;     /* list of slices contained by the pie menu */
+	struct Slice *selected; /* slice currently selected in the menu */
+	unsigned nslices;       /* number of slices */
+	int x, y;               /* menu position */
+	double half;            /* angle of half a slice of the pie menu */
+	int level;              /* menu level relative to root */
+
+	int drawn;              /* whether the pixmap have been drawn */
+	Drawable pixmap;        /* pixmap to draw the menu on */
+	Picture picture;        /* XRender picture */
+	Window win;             /* menu window to map on the screen */
+};
+
+/* monitor and cursor geometry structure */
+struct Monitor {
+	int x, y, w, h;         /* monitor geometry */
+	int cursx, cursy;
+};
+
+/* geometry of the pie and bitmap that shapes it */
+struct Pie {
+	GC gc;              /* graphic context of the bitmaps */
+	Drawable clip;      /* bitmap shaping the clip region (without borders) */
+	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
+
+	int fulldiameter;   /* diameter of the pie + 2*border*/
+	int diameter;       /* diameter of the pie */
+	int radius;         /* radius of the pie */
+	int border;         /* border of the pie */
+	int tooltiph;
+
+	int triangleinner;
+	int triangleouter;
+	int separatorbeg;
+	int separatorend;
+	double triangleangle;
+	double innerangle;
+	double outerangle;
+
+	Picture bg;
+	Picture fg;
+	Picture selbg;
+	Picture selfg;
+	Picture separator;
+};
 
 /* X stuff */
 static Display *dpy;
@@ -1004,11 +1141,8 @@ maptooltip(struct Monitor *mon, struct Slice *slice, int x, int y)
 
 /* unmap tooltip if mapped, set mapped to zero */
 static void
-unmaptooltip(struct Slice *slice, int *mapped)
+unmaptooltip(struct Slice *slice)
 {
-	if (!*mapped)
-		return;
-	*mapped = 0;
 	if (slice == NULL || slice->icon == NULL || slice->label == NULL)
 		return;
 	XUnmapWindow(dpy, slice->tooltip);
@@ -1380,56 +1514,45 @@ ungrab(void)
 	XUngrabKeyboard(dpy, CurrentTime);
 }
 
-/* subtract two timespecs */
+/* create tooltip */
 static void
-timesub(struct timespec *a, struct timespec *b, struct timespec *c)
+tooltip(struct Menu *currmenu, XEvent *ev)
 {
-	if (a->tv_sec < b->tv_sec) {
-		c->tv_sec = 0;
-		c->tv_nsec = 0;
-	} else if (a->tv_sec == b->tv_sec) {
-		c->tv_sec = 0;
-		if (a->tv_nsec <= b->tv_nsec) {
-			c->tv_nsec = 0;
-		} else {
-			c->tv_nsec = a->tv_nsec - b->tv_nsec;
-		}
-	} else {
-		c->tv_sec = a->tv_sec - b->tv_sec;
-		c->tv_nsec = a->tv_nsec - b->tv_nsec;
-		if (c->tv_nsec < 0) {
-			c->tv_sec--;
-			c->tv_nsec += 1000000000L;
+	struct Menu *menu = NULL;
+	struct Slice *slice = NULL;
+
+	while (!XNextEvent(dpy, ev)) {
+		switch (ev->type) {
+		case Expose:
+			if (ev->xexpose.count == 0) {
+				if (ev->xexpose.window == currmenu->selected->tooltip) {
+					copytooltip(currmenu->selected);
+				} else if (ev->xexpose.window == currmenu->win) {
+					copymenu(currmenu);
+				}
+			}
+			break;
+		case MotionNotify:
+			menu = getmenu(currmenu, ev->xmotion.window);
+			slice = getslice(menu, ev->xmotion.x, ev->xmotion.y);
+			if ((menu != NULL && menu != currmenu) || slice != currmenu->selected) {
+				/* motion off selected slice */
+				return;
+			}
+			break;
+		case ButtonRelease:
+		case ButtonPress:
+		case KeyPress:
+		case ConfigureNotify:
+			return;
 		}
 	}
-}
-
-/* get current timespec */
-static void
-gettimespec(struct timespec *ts)
-{
-	if (clock_gettime(CLOCK_REALTIME, ts) == -1) {
-		err(1, "time");
-	}
-}
-
-/* get timeout from diff timespec */
-static int
-gettimeout(struct timespec *ts)
-{
-	int timeout;
-
-	timeout = 1000 * ts->tv_sec + ts->tv_nsec / 1000000;
-	return (timeout <= 2000) ? 2000 - timeout : -1;
 }
 
 /* run event loop */
 static void
-run(struct Menu *rootmenu)
+run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 {
-	struct pollfd pfd = {0};
-	struct timespec now, stoptime, diff;
-	struct Monitor mon;
 	struct Menu *currmenu;
 	struct Menu *prevmenu;
 	struct Menu *menu = NULL;
@@ -1437,188 +1560,131 @@ run(struct Menu *rootmenu)
 	KeySym ksym;
 	XEvent ev;
 	int timeout;
-	int mapped = 0;
-	int ttmapped = 0;
 	int nready;
 	int ttx, tty;
 
-	pfd.fd = XConnectionNumber(dpy);
-	pfd.events = POLLIN;
+	nready = 3;
 	timeout = -1;
-	stoptime.tv_sec = 0;
-	if (!rflag) {
-		getmonitor(&mon);
-		prevmenu = NULL;
-		currmenu = rootmenu;
-		grabpointer();
-		grabkeyboard();
-		placemenu(&mon, currmenu);
-		prevmenu = mapmenu(currmenu, prevmenu);
-		XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-	}
-	do {
-		while (XPending(dpy) || (nready = poll(&pfd, 1, timeout)) != -1) {
-			if (nready == 0)
-				goto time;
+	ttx = tty = 0;
+	prevmenu = currmenu = rootmenu;
+	while (XPending(dpy) || (nready = poll(pfd, 1, timeout)) != -1) {
+		if (nready == 0 && currmenu != NULL && currmenu->selected != NULL) {
+			maptooltip(mon, currmenu->selected, ttx, tty);
+			tooltip(currmenu, &ev);
+			unmaptooltip(currmenu->selected);
+		} else {
 			XNextEvent(dpy, &ev);
-			if (rflag && !mapped && ev.type == ButtonPress) {
-				if ((modifier && ev.xbutton.state == modifier) || ev.xbutton.subwindow == None) {
-					if (pflag && ev.xbutton.state == 0)
-						XAllowEvents(dpy, ReplayPointer, CurrentTime);
-					mapped = 1;
-					getmonitor(&mon);
-					prevmenu = NULL;
-					currmenu = rootmenu;
-					grabpointer();
-					grabkeyboard();
-					placemenu(&mon, currmenu);
-					prevmenu = mapmenu(currmenu, prevmenu);
-					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-				} else {
-					XAllowEvents(dpy, ReplayPointer, CurrentTime);
-				}
-				continue;
-			}
-			if (currmenu == NULL)
-				continue;
-			switch (ev.type) {
-			case Expose:
-				if (ev.xexpose.count == 0 && currmenu != NULL) {
-					if (currmenu->selected != NULL && ev.xexpose.window == currmenu->selected->tooltip) {
-						copytooltip(currmenu->selected);
-					} else if (ev.xexpose.window == currmenu->win) {
-						copymenu(currmenu);
-					}
-				}
-				break;
-			case MotionNotify:
-				timeout = -1;
-				menu = getmenu(currmenu, ev.xmotion.window);
-				slice = getslice(menu, ev.xmotion.x, ev.xmotion.y);
-				if (menu == NULL)
-					break;
-				if (slice != currmenu->selected) {
-					/* motion off selected slice */
-					unmaptooltip(currmenu->selected, &ttmapped);
-				}
-				if (currmenu != rootmenu && menu != currmenu) {
-					/* motion off a non-root menu */
-					currmenu = currmenu->parent;
-					prevmenu = mapmenu(currmenu, prevmenu);
-					currmenu->selected = NULL;
-					copymenu(currmenu);
-				}
-				if (menu == currmenu) {
-					/* motion inside a menu */
-					currmenu->selected = slice;
-					gettimespec(&stoptime);
-					stoptime.tv_sec += 1;
-					ttx = ev.xmotion.x_root;
-					tty = ev.xmotion.y_root;
-				}
+		}
+		switch (ev.type) {
+		case Expose:
+			if (currmenu != NULL && ev.xexpose.count == 0)
 				copymenu(currmenu);
+			break;
+		case MotionNotify:
+			timeout = -1;
+			menu = getmenu(currmenu, ev.xmotion.window);
+			slice = getslice(menu, ev.xmotion.x, ev.xmotion.y);
+			if (menu == NULL)
 				break;
-			case ButtonRelease:
-				if (ev.xbutton.button != Button1 && ev.xbutton.button != Button3)
-					break;
-				menu = getmenu(currmenu, ev.xbutton.window);
-				slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
-				if (menu == NULL || slice == NULL)
-					break;
-	selectslice:
-				unmaptooltip(currmenu->selected, &ttmapped);
-				if (slice->submenu) {
-					currmenu = slice->submenu;
-				} else if (slice->iscmd == CMD_NOTRUN) {
-					if ((menu = genmenu(&mon, menu, slice)) != NULL) {
-						currmenu = menu;
-					}
-				} else {
-					printf("%s\n", slice->output);
-					fflush(stdout);
-					goto done;
-				}
+			if (currmenu != rootmenu && menu != currmenu) {
+				/* motion off a non-root menu */
+				currmenu = currmenu->parent;
 				prevmenu = mapmenu(currmenu, prevmenu);
 				currmenu->selected = NULL;
 				copymenu(currmenu);
-				if (!wflag)
-					XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
-				break;
-			case ButtonPress:
-				if (ev.xbutton.button != Button1 && ev.xbutton.button != Button3)
-					break;
-				menu = getmenu(currmenu, ev.xbutton.window);
-				slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
-				if (menu == NULL || slice == NULL)
-					goto done;
-				break;
-			case KeyPress:
-				ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
-
-				/* esc closes pmenu when current menu is the root menu */
-				if (ksym == XK_Escape && currmenu->parent == NULL)
-					goto done;
-
-				/* Shift-Tab = ISO_Left_Tab */
-				if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
-					ksym = XK_ISO_Left_Tab;
-
-				/* cycle through menu */
-				slice = NULL;
-				if (ksym == XK_Tab) {
-					slice = slicecycle(currmenu, 1);
-				} else if (ksym == XK_ISO_Left_Tab) {
-					slice = slicecycle(currmenu, 0);
-				} else if ((ksym == XK_Return) &&
-			           	   currmenu->selected != NULL) {
-					slice = currmenu->selected;
-					goto selectslice;
-				} else if ((ksym == XK_Escape) &&
-			           	   currmenu->parent != NULL) {
-					slice = currmenu->parent->selected;
-					unmaptooltip(currmenu->selected, &ttmapped);
-					currmenu = currmenu->parent;
-					prevmenu = mapmenu(currmenu, prevmenu);
-				} else
-					break;
-				currmenu->selected = slice;
-				stoptime.tv_sec = 0;
-				copymenu(currmenu);
-				break;
-			case ConfigureNotify:
-				menu = getmenu(currmenu, ev.xconfigure.window);
-				if (menu == NULL)
-					break;
-				menu->x = ev.xconfigure.x;
-				menu->y = ev.xconfigure.y;
-				break;
 			}
-time:
-			if (stoptime.tv_sec > 0 && !ttmapped && currmenu != NULL && currmenu->selected != NULL) {
-				gettimespec(&now);
-				timesub(&stoptime, &now, &diff);
-				if (diff.tv_sec <= 0 && diff.tv_nsec <= 0) {
-					maptooltip(&mon, currmenu->selected, ttx, tty);
-					ttmapped = 1;
-					timeout = -1;
-				} else {
-					timeout = gettimeout(&diff);
+			if (menu == currmenu) {
+				/* motion inside a menu */
+				currmenu->selected = slice;
+				timeout = 1000;
+				ttx = ev.xmotion.x_root;
+				tty = ev.xmotion.y_root;
+			}
+			copymenu(currmenu);
+			break;
+		case ButtonRelease:
+			timeout = -1;
+			if (ev.xbutton.button != Button1 && ev.xbutton.button != Button3)
+				break;
+			menu = getmenu(currmenu, ev.xbutton.window);
+			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+			if (menu == NULL || slice == NULL)
+				break;
+selectslice:
+			if (slice->submenu) {
+				currmenu = slice->submenu;
+			} else if (slice->iscmd == CMD_NOTRUN) {
+				if ((menu = genmenu(mon, menu, slice)) != NULL) {
+					currmenu = menu;
 				}
 			} else {
-				timeout = -1;
+				printf("%s\n", slice->output);
+				fflush(stdout);
+				goto done;
 			}
+			prevmenu = mapmenu(currmenu, prevmenu);
+			currmenu->selected = NULL;
+			copymenu(currmenu);
+			if (!wflag)
+				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			break;
+		case ButtonPress:
+			timeout = -1;
+			if (ev.xbutton.button != Button1 && ev.xbutton.button != Button3)
+				break;
+			menu = getmenu(currmenu, ev.xbutton.window);
+			slice = getslice(menu, ev.xbutton.x, ev.xbutton.y);
+			if (menu == NULL || slice == NULL)
+				goto done;
+			break;
+		case KeyPress:
+			timeout = -1;
+			ksym = XkbKeycodeToKeysym(dpy, ev.xkey.keycode, 0, 0);
+
+			/* esc closes pmenu when current menu is the root menu */
+			if (ksym == XK_Escape && currmenu->parent == NULL)
+				goto done;
+
+			/* Shift-Tab = ISO_Left_Tab */
+			if (ksym == XK_Tab && (ev.xkey.state & ShiftMask))
+				ksym = XK_ISO_Left_Tab;
+
+			/* cycle through menu */
+			slice = NULL;
+			if (ksym == XK_Tab) {
+				slice = slicecycle(currmenu, 1);
+			} else if (ksym == XK_ISO_Left_Tab) {
+				slice = slicecycle(currmenu, 0);
+			} else if ((ksym == XK_Return) &&
+			           currmenu->selected != NULL) {
+				slice = currmenu->selected;
+				goto selectslice;
+			} else if ((ksym == XK_Escape) &&
+			           currmenu->parent != NULL) {
+				slice = currmenu->parent->selected;
+				currmenu = currmenu->parent;
+				prevmenu = mapmenu(currmenu, prevmenu);
+			} else
+				break;
+			currmenu->selected = slice;
+			copymenu(currmenu);
+			break;
+		case ConfigureNotify:
+			menu = getmenu(currmenu, ev.xconfigure.window);
+			if (menu == NULL)
+				break;
+			menu->x = ev.xconfigure.x;
+			menu->y = ev.xconfigure.y;
+			break;
 		}
-		if (nready == -1)
-			err(1, "poll");
-done:
-		unmaptooltip(currmenu->selected, &ttmapped);
-		mapped = 0;
-		unmapmenu(currmenu);
-		ungrab();
-		cleangenmenu(rootmenu);
 		XFlush(dpy);
-		currmenu = NULL;
-	} while (rflag);
+	}
+	if (nready == -1)
+		err(1, "poll");
+done:
+	unmapmenu(currmenu);
+	ungrab();
+	cleangenmenu(rootmenu);
 }
 
 /* free pictures */
@@ -1649,7 +1715,10 @@ cleandc(void)
 int
 main(int argc, char *argv[])
 {
+	struct pollfd pfd;
 	struct Menu *rootmenu;
+	struct Monitor mon;
+	XEvent ev;
 
 	/* open connection to server and set X variables */
 	if ((dpy = XOpenDisplay(NULL)) == NULL)
@@ -1689,8 +1758,27 @@ main(int argc, char *argv[])
 		errx(1, "no menu generated");
 	setslices(rootmenu);
 
-	/* run event loop */
-	run(rootmenu);
+	pfd.fd = XConnectionNumber(dpy);
+	pfd.events = POLLIN;
+	do {
+		if (rflag)
+			XNextEvent(dpy, &ev);
+		if (!rflag ||
+		    (ev.type == ButtonPress &&
+		     ((modifier && ev.xbutton.state == modifier) ||
+		      (ev.xbutton.subwindow == None)))) {
+			getmonitor(&mon);
+			grabpointer();
+			grabkeyboard();
+			placemenu(&mon, rootmenu);
+			mapmenu(rootmenu, NULL);
+			XWarpPointer(dpy, None, rootmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			XFlush(dpy);
+			run(&pfd, &mon, rootmenu);
+		} else {
+			XAllowEvents(dpy, ReplayPointer, CurrentTime);
+		}
+	} while (rflag);
 
 	/* freeing stuff */
 	cleanmenu(rootmenu);
