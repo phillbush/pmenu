@@ -1,5 +1,13 @@
                                CHANGELOG
 
+2.4.0 (2021-09-25).
+• Added submenu generation at runtime (when output spec begins with $).
+• Added -P option to prepend relative image paths with a prefix (#9).
+• Added tooltips that appear after hovering a item for one second.
+• Removed -t (triangles are always drawn).
+• Fixed -r option (#10).
+• Fixed crashing (#11).
+
 2.3.0 (2021-05-09).
 • Added CHANGELOG.
 • Added -m option.
