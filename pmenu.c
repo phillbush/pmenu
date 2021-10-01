@@ -1767,6 +1767,9 @@ main(int argc, char *argv[])
 		    (ev.type == ButtonPress &&
 		     ((modifier && ev.xbutton.state == modifier) ||
 		      (ev.xbutton.subwindow == None)))) {
+			if (rflag && pflag) {
+				XAllowEvents(dpy, ReplayPointer, CurrentTime);
+			}
 			getmonitor(&mon);
 			grabpointer();
 			grabkeyboard();

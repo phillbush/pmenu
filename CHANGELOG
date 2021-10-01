@@ -1,5 +1,11 @@
                                CHANGELOG
 
+2.4.2 (2021-10-01).
+• Fixed -p option.
+
+2.4.1 (2021-09-25).
+• Fixed CHANGELOG.
+
 2.4.0 (2021-09-25).
 • Added submenu generation at runtime (when output spec begins with $).
 • Added -P option to prepend relative image paths with a prefix (#9).
