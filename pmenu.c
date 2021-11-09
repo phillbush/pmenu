@@ -532,7 +532,7 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	swa.background_pixel = dc.normal[ColorBG].pixel;
 	swa.border_pixel = dc.border.pixel;
 	swa.save_under = True;  /* pop-up windows should save_under*/
-	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask;
+	swa.event_mask = ExposureMask | KeyPressMask | ButtonPressMask | ButtonReleaseMask | PointerMotionMask | LeaveWindowMask;
 	menu->win = XCreateWindow(dpy, rootwin, 0, 0, pie.diameter, pie.diameter, pie.border,
 	                          CopyFromParent, CopyFromParent, CopyFromParent,
 	                          CWOverrideRedirect | CWBackPixel |
@@ -1627,6 +1627,17 @@ selectslice:
 			copymenu(currmenu);
 			if (!wflag)
 				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			break;
+		case LeaveNotify:
+			if (!(ev.xcrossing.state & (Button1Mask | Button3Mask)))
+				break;
+			menu = getmenu(currmenu, ev.xcrossing.window);
+			slice = getslice(menu, ev.xcrossing.x, ev.xcrossing.y);
+			if (menu == NULL || slice == NULL)
+				break;
+			if (slice == currmenu->selected &&
+			    (slice->submenu != NULL || slice->iscmd == CMD_NOTRUN))
+				goto selectslice;
 			break;
 		case ButtonPress:
 			timeout = -1;
