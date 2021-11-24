@@ -893,6 +893,7 @@ setslices(struct Menu *menu)
 	menu->half = M_PI / menu->nslices;
 	swa.override_redirect = True;
 	swa.background_pixel = dc.normal[ColorBG].pixel;
+	swa.border_pixel = dc.normal[ColorFG].pixel;
 	swa.save_under = True;  /* pop-up windows should save_under*/
 	swa.event_mask = ExposureMask;
 	for (slice = menu->list; slice; slice = slice->next) {
@@ -941,9 +942,9 @@ setslices(struct Menu *menu)
 		slice->ttdrawn = 0;
 		if (textwidth > 0) {
 			slice->ttw = textwidth + 2 * TTPAD;
-			slice->tooltip = XCreateWindow(dpy, rootwin, 0, 0, slice->ttw, pie.tooltiph, 0,
+			slice->tooltip = XCreateWindow(dpy, rootwin, 0, 0, slice->ttw, pie.tooltiph, 1,
 			                               CopyFromParent, CopyFromParent, CopyFromParent,
-			                               CWOverrideRedirect | CWBackPixel | CWEventMask | CWSaveUnder,
+			                               CWOverrideRedirect | CWBackPixel | CWEventMask | CWSaveUnder | CWBorderPixel,
 			                               &swa);
 			slice->ttpix = XCreatePixmap(dpy, slice->tooltip, slice->ttw, pie.tooltiph, depth);
 			XChangeProperty(dpy, slice->tooltip, atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
@@ -1131,10 +1132,10 @@ maptooltip(struct Monitor *mon, struct Slice *slice, int x, int y)
 	y += TTVERT;
 	if (slice->icon == NULL || slice->label == NULL)
 		return;
-	if (y + pie.tooltiph > mon->y + mon->h)
-		y = mon->y + mon->h - pie.tooltiph;
-	if (x + slice->ttw > mon->x + mon->w)
-		x = mon->x + mon->w - slice->ttw;
+	if (y + pie.tooltiph + 2 > mon->y + mon->h)
+		y = mon->y + mon->h - pie.tooltiph - 2;
+	if (x + slice->ttw + 2 > mon->x + mon->w)
+		x = mon->x + mon->w - slice->ttw - 2;
 	XMoveWindow(dpy, slice->tooltip, x, y);
 	XMapRaised(dpy, slice->tooltip);
 }
@@ -1540,6 +1541,7 @@ tooltip(struct Menu *currmenu, XEvent *ev)
 				return;
 			}
 			break;
+		case LeaveNotify:
 		case ButtonRelease:
 		case ButtonPress:
 		case KeyPress:
