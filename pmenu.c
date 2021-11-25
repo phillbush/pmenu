@@ -21,7 +21,6 @@
 #define TTVERT   30             /* vertical distance from mouse to place tooltip */
 
 /* macros */
-#define LEN(x)              (sizeof (x) / sizeof (x[0]))
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
@@ -1149,7 +1148,7 @@ unmaptooltip(struct Slice *slice)
 	XUnmapWindow(dpy, slice->tooltip);
 }
 
-/* umap previous menus; map current menu and its parents */
+/* unmap previous menus; map current menu and its parents */
 static struct Menu *
 mapmenu(struct Menu *currmenu, struct Menu *prevmenu)
 {
@@ -1200,7 +1199,7 @@ done:
 	return currmenu;
 }
 
-/* umap urrent menu and its parents */
+/* unmap current menu and its parents */
 static void
 unmapmenu(struct Menu *currmenu)
 {
