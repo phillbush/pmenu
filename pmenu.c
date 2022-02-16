@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
@@ -687,7 +688,8 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 
 	icon = imlib_load_image_with_error_return(file, &errcode);
 	if (*file == '\0') {
-		errx(1, "could not load icon (file name is blank)");
+		warnx("could not load icon (file name is blank)");
+		return NULL;
 	} else if (icon == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
@@ -724,7 +726,8 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 			errstr = "unknown error";
 			break;
 		}
-		errx(1, "could not load icon (%s): %s", errstr, file);
+		warnx("could not load icon (%s): %s", errstr, file);
+		return NULL;
 	}
 
 	imlib_context_set_image(icon);
@@ -926,10 +929,13 @@ setslices(struct Menu *menu)
 			iconsize = sqrt(xdiff * xdiff + ydiff * ydiff);
 			iconsize = MIN(maxiconsize, iconsize);
 
-			slice->icon = loadicon(slice->file, iconsize, &iconw, &iconh);
+			if ((slice->icon = loadicon(slice->file, iconsize, &iconw, &iconh)) != NULL) {
+				slice->iconx = pie.radius + (pie.radius * (cos(a) * 0.6)) - iconw / 2;
+				slice->icony = pie.radius - (pie.radius * (sin(a) * 0.6)) - iconh / 2;
+			}
 
-			slice->iconx = pie.radius + (pie.radius * (cos(a) * 0.6)) - iconw / 2;
-			slice->icony = pie.radius - (pie.radius * (sin(a) * 0.6)) - iconh / 2;
+			free(slice->file);
+			slice->file = NULL;
 		}
 
 		/* create pixmap */
@@ -1330,11 +1336,11 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			source = pie.fg;
 		}
 
-		if (slice->file) {      /* if there is an icon, draw it */
+		if (slice->icon != NULL) {      /* if there is an icon, draw it */
 			imlib_context_set_drawable(pixmap);
 			imlib_context_set_image(slice->icon);
 			imlib_render_image_on_drawable(slice->iconx, slice->icony);
-		} else {                /* otherwise, draw the label */
+		} else {                        /* otherwise, draw the label */
 			draw = XftDrawCreate(dpy, pixmap, visual, colormap);
 			XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
 			drawtext(draw, &color[ColorFG], slice->labelx, slice->labely, slice->label);
@@ -1448,12 +1454,11 @@ cleanmenu(struct Menu *menu)
 			XDestroyWindow(dpy, slice->tooltip);
 		if (slice->ttpix != None)
 			XFreePixmap(dpy, slice->ttpix);
-		if (tmp->file != NULL) {
+		if (tmp->file != NULL)
 			free(tmp->file);
-			if (tmp->icon != NULL) {
-				imlib_context_set_image(tmp->icon);
-				imlib_free_image();
-			}
+		if (tmp->icon != NULL) {
+			imlib_context_set_image(tmp->icon);
+			imlib_free_image();
 		}
 		slice = slice->next;
 		free(tmp);
