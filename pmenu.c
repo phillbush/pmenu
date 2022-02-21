@@ -1592,7 +1592,9 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 			slice = getslice(menu, ev.xmotion.x, ev.xmotion.y);
 			if (menu == NULL)
 				break;
-			if (currmenu != rootmenu && menu != currmenu) {
+			if (wflag) {
+				menu->selected = slice;
+			} else if (currmenu != rootmenu && menu != currmenu) {
 				/* motion off a non-root menu */
 				currmenu = currmenu->parent;
 				prevmenu = mapmenu(currmenu, prevmenu);
