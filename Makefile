@@ -1,4 +1,28 @@
-include config.mk
+# program name
+PROG = pmenu
+
+# paths
+PREFIX = /usr/local
+MANPREFIX = ${PREFIX}/share/man
+LOCALINC = /usr/local/include
+LOCALLIB = /usr/local/lib
+X11INC = /usr/X11R6/include
+X11LIB = /usr/X11R6/lib
+FREETYPEINC = /usr/include/freetype2
+# OpenBSD (uncomment)
+#FREETYPEINC = ${X11INC}/freetype2
+
+# includes and libs
+INCS += -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}
+LIBS += -L${LOCALLIB} -L${X11LIB} -lm -lfontconfig -lXft -lX11 -lXinerama -lXrender -lXext -lImlib2
+
+# flags
+#DEBUG += -g -O0
+CFLAGS += ${DEBUG} -Wall -Wextra ${INCS} ${CPPFLAGS}
+LDFLAGS += ${LIBS}
+
+# compiler and linker
+CC = cc
 
 SRCS = ${PROG}.c
 OBJS = ${SRCS:.c=.o}

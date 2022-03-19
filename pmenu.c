@@ -1802,7 +1802,7 @@ main(int argc, char *argv[])
 		}
 	} while (rflag);
 
-	/* freeing stuff */
+	/* free stuff */
 	cleanmenu(rootmenu);
 	cleanpictures();
 	cleandc();
