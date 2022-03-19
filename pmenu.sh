@@ -2,7 +2,7 @@
 
 <<EOF ./pmenu
 Apps
-	Firefox	firefox-esr
+	Firefox	firefox
 	Chrome	chromium
 	Vivaldi	vivaldi
 	Gimp	gimp

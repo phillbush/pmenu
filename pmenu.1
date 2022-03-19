@@ -3,11 +3,8 @@
 pmenu \- pie menu utility for X
 .SH SYNOPSIS
 .B pmenu
-.RB [ \-pw ]
-.RB [ \-m
-.IR modifier ]
-.RB [ \-r
-.IR button ]
+.RB [ \-w ]
+[(\fB\-x\fP|\fB\-X\fP) [\fImod\fP-]\fIbutton\fP]
 .SH DESCRIPTION
 .B pmenu
 is a pie menu for X,
@@ -18,50 +15,58 @@ The pie menu contains one slice for each item.
 .PP
 The options are as follows:
 .TP
-.BI "\-m " modifier
-Use the button click specified by the
-.B \-r
-option with the given modifier number to spawn the pie menu.
-For example, if calling pmenu with the
-.B -r 3 -m 4
-options,
-the pie menu will be displayed when clicking any window with the right mouse button
-and the Mod4 modifier (usually the Super key).
-this option only makes sense when
-.B \-r
-is used.
-.TP
-.B \-p
-When
-.B \-r
-is used, pass the click to the root window,
-for the window manage to use it, for example.
-This option only makes sense when
-.B \-r
-is used.
-.TP
-.B \-r
-When this option is used,
-.B pmenu
-listens to button presses on the root window,
-and shows the pie menu when the button (a number between 1 and 3) is pressed on the root window.
-This option makes
-.B menu
-run continuously,
-so it should be run in background on a X startup file (like
-.BR "~/.xinitrc" ,
-.BR "~/.xprofile" ,
-etc).
-.TP
 .B \-w
 Disable pointer warping when a new submenu spawns.
 This option is useful when using
 .B pmenu
 with a Wacom tablet.
 .TP
-.B \-P
-Prefix any relative paths given for images with this text.
-Must end with a '/' character.
+\fB\-x\fP [\fImod\fP-]\fIbutton\fP
+This option requires an argument of the form
+\fImod\fP-\fIbutton\fP or \fIbutton\fP; where
+.I mod
+is
+.B Mod1
+to
+.BR Mod5 ,
+or
+.B Alt
+(equivalent to
+.BR Mod1 ),
+or
+.B Super
+(equivalent to
+.BR Mod4 );
+and
+.I button
+is the number of a mouse button.
+When this option is used,
+.B pmenu
+listens to button presses on the root window,
+and shows the pie menu when the given button is pressed,
+together with the given modifier,
+on the root window.
+For example, invoking
+.B pmenu
+with the option
+.B -x Super-3
+makes a menu open when clicking with the third mouse button on the root window,
+or when clicking with the third mouse button together with the Super (Mod4) modifier on any window.
+This option makes
+.B pmenu
+run continuously;
+so it should be used when
+.B pmenu
+is invoked in background on a X startup file (like
+.BR "~/.xinitrc" ).
+.TP
+\fB\-X\fP [\fImod\fP-]\fIbutton\fP
+Just like
+.BR \-x ,
+but also pass the click to the root window
+(for the window manager to use it, for example).
+This option is incompatible with
+.BR \-x .
 .PP
 Each item read from stdin has the following format:
 .IP
@@ -79,15 +84,19 @@ items indented with a tab are shown in a submenu of the preceding item not inden
 An item without initial tabs is a top-level item.
 .IP
 The image is a string of the form "IMG:/path/to/image.png".
-It specifies a image to be shown as icon in the slice.
+It specifies the path to a image file to be shown as icon in the slice.
+If the path does not begin with "/", "./" or "../", the file is searched
+on the paths specified in the
+.B ICONPATH
+environment variable.
 .IP
-The label is the string that will be shown as a item in the menu.
+The label is the string that will be shown as an item in the menu.
 If the item includes a icon, then no label is shown on the menu;
 however, a tooltip with the label pops up when hovering the icon.
 .IP
 The output is the string that will be output after selecting the item.
 If an item does not have an output, its label is used as its output.
-If the output begins with the $ character, than this string represents a command
+If the output begins with the $ character, then this string represents a command
 that will be run by
 .B pmenu
 using 
@@ -148,6 +157,17 @@ The size in pixels of the slice separator.
 .TP
 .B pmenu.diameterWidth
 The size in pixels of the pie menu.
+.SH ENVIRONMENT
+The following environment variables affect the execution of
+.BR pmenu .
+.TP
+.B DISPLAY
+The display to start
+.B pmenu
+on.
+.TP
+.B ICONPATH
+A colon-separated list of directories used to search for the location of image files.
 .SH EXAMPLES
 The following script illustrates the use of
 .BR pmenu .
@@ -158,22 +178,22 @@ creating a command to be run by the shell.
 .EX
 #!/bin/sh
 
-cat <<EOF | pmenu | sh &
-Applications
-	IMG:./firefox.png	Firefox Browser		firefox-esr
-	IMG:./chrome.png	Chrome Browser		chromium
-	IMG:./vivaldi.png	Vivaldi Browser		vivaldi
-	IMG:./gimp.png	        Image Editor		gimp
-Terminal (xterm)					xterm
-Terminal (urxvt)					urxvt
-Terminal (st)						st
-
-Shutdown						poweroff
-Reboot							reboot
+<<EOF pmenu | sh &
+Apps
+	Firefox	firefox
+	Chrome	chromium
+	Vivaldi	vivaldi
+	Gimp	gimp
+Terms
+	xterm	xterm
+	urxvt	urxvt
+	st	st
+Halt	poweroff
+Reboot	reboot
 EOF
 .EE
 .PP
-For example, by selecting \(lqApplications\(rq, a new menu will appear.
-Selecting \(lqFirefox Browser\(rq in the new menu opens firefox.
+For example, by selecting \(lqApps\(rq, a new menu will appear.
+Selecting \(lqFirefox\(rq in the new menu opens firefox.
 .SH SEE ALSO
 .IR xmenu (1)

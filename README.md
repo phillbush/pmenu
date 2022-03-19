@@ -4,6 +4,13 @@
   <img src="https://user-images.githubusercontent.com/63266536/159123820-7f1a5c97-87bd-4be2-a4a5-870cb695a3ba.png", title="demo"/>
 </p>
 
+**WARNING:**
+The options `-r`, `-m` and `-p` are deprecated and were replaced by `-x`
+and `-X`.  The option `-P` (used to provide path) is now replaced by the
+environment variable `$ICONPATH`, an environment variable which supports
+several paths delimited by colons. Read the manual for more information.
+Update your scripts after updating πmenu.
+
 πmenu is a pie menu utility for X.
 πmenu receives a menu specification in stdin, shows a menu for the user
 to select one of the options, and outputs the option selected to stdout.
@@ -18,7 +25,7 @@ to select one of the options, and outputs the option selected to stdout.
 ## Files
 
 The files are:
-* `./README`:     This file.
+* `./README.md`:  This file.
 * `./Makefile`:   The makefile.
 * `./config.h`:   The hardcoded default configuration for πmenu.
 * `./pmenu.1`:    The manual file (man page) for πmenu.

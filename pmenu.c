@@ -20,6 +20,8 @@
 #define CLASS    "PMenu"
 #define TTPAD    4              /* padding for the tooltip */
 #define TTVERT   30             /* vertical distance from mouse to place tooltip */
+#define MAXPATHS 128            /* maximal number of paths to look for icons */
+#define ICONPATH "ICONPATH"     /* environment variable name */
 
 /* macros */
 #define MAX(x,y)            ((x)>(y)?(x):(y))
@@ -173,14 +175,18 @@ static XClassHint classh;
 static struct Pie pie;
 
 /* flags */
-static int rflag = 0;           /* wheter to run in root mode */
-static int pflag = 0;           /* whether to pass click to root window */
-static int wflag = 0;           /* whether to disable pointer warping */
-static unsigned int button;     /* button to trigger pmenu in root mode */
-static unsigned int modifier;   /* modifier to trigger pmenu */
+static int rootmodeflag = 0;                    /* wheter to run in root mode */
+static int nowarpflag = 0;                      /* whether to disable pointer warping */
+static int passclickflag = 0;                   /* whether to pass click to root window */
 
-static char *path_prefix = NULL;
-static size_t path_prefix_size;
+/* arguments */
+static unsigned int button = AnyButton;         /* button to trigger pmenu in root mode */
+static unsigned int modifier = AnyModifier;     /* modifier to trigger pmenu */
+
+/* icons paths */
+static char *iconstring = NULL;                 /* string read from getenv */
+static char *iconpaths[MAXPATHS];               /* paths to icon directories */
+static int niconpaths = 0;                      /* number of paths to icon directories */
 
 #include "config.h"
 
@@ -188,8 +194,19 @@ static size_t path_prefix_size;
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-pw] [-m modifier] [-r button] [-P image_prefix]\n");
+	(void)fprintf(stderr, "usage: pmenu [-w] [(-x|-X) [modifier-]button]\n");
 	exit(1);
+}
+
+/* call strdup checking for error */
+static char *
+estrdup(const char *s)
+{
+	char *t;
+
+	if ((t = strdup(s)) == NULL)
+		err(1, "strdup");
+	return t;
 }
 
 /* read xrdb for configuration options */
@@ -223,63 +240,105 @@ getresources(void)
 		config.font = xval.addr;
 }
 
+/* set button global variable */
+static void
+setbutton(char *s)
+{
+	size_t len;
+
+	if ((len = strlen(s)) < 1)
+		return;
+	switch (s[len-1]) {
+	case '1': button = Button1; break;
+	case '2': button = Button2; break;
+	case '3': button = Button3; break;
+	default:  button = atoi(&s[len-1]); break;
+	}
+}
+
+/* set modifier global variable */
+static void
+setmodifier(char *s)
+{
+	size_t len;
+
+	if ((len = strlen(s)) < 1)
+		return;
+	switch (s[len-1]) {
+	case '1': modifier = Mod1Mask; break;
+	case '2': modifier = Mod2Mask; break;
+	case '3': modifier = Mod3Mask; break;
+	case '4': modifier = Mod4Mask; break;
+	case '5': modifier = Mod5Mask; break;
+	default:
+		if (strcasecmp(s, "Alt") == 0) {
+			modifier = Mod1Mask;
+		} else if (strcasecmp(s, "Super") == 0) {
+			modifier = Mod4Mask;
+		}
+		break;
+	}
+}
+
+/* parse icon path string */
+static void
+parseiconpaths(char *s)
+{
+	if (s == NULL)
+		return;
+	free(iconstring);
+	iconstring = estrdup(s);
+	niconpaths = 0;
+	for (s = strtok(iconstring, ":"); s != NULL; s = strtok(NULL, ":")) {
+		if (niconpaths < MAXPATHS) {
+			iconpaths[niconpaths++] = s;
+		}
+	}
+}
+
 /* get options */
 static void
 getoptions(int argc, char **argv)
 {
 	int ch;
-	char *s;
+	char *s, *t;
 
 	classh.res_class = CLASS;
 	classh.res_name = argv[0];
 	if ((s = strrchr(argv[0], '/')) != NULL)
 		classh.res_name = s + 1;
-	while ((ch = getopt(argc, argv, "m:pr:wP:")) != -1) {
+	parseiconpaths(getenv(ICONPATH));
+	while ((ch = getopt(argc, argv, "wx:X:P:r:m:p")) != -1) {
 		switch (ch) {
-		case 'm':
-			switch (*optarg) {
-			default:
-			case '1':
-				modifier = Mod1Mask;
-				break;
-			case '2':
-				modifier = Mod2Mask;
-				break;
-			case '3':
-				modifier = Mod3Mask;
-				break;
-			case '4':
-				modifier = Mod4Mask;
-				break;
-			case '5':
-				modifier = Mod5Mask;
-				break;
-			}
+		case 'w':
+			nowarpflag = 1;
+			break;
+		case 'X':
+			passclickflag = 1;
+			/* PASSTHROUGH */
+		case 'x':
+			rootmodeflag = 1;
+			s = optarg;
+			setbutton(s);
+			if ((t = strchr(s, '-')) == NULL)
+				return;
+			*t = '\0';
+			setmodifier(s);
+			break;
+
+		/* the options below are deprecated and may be removed in the future */
+		case 'P':
+			parseiconpaths(optarg);
 			break;
 		case 'p':
-			pflag = 1;
+			passclickflag = 1;
 			break;
 		case 'r':
-			rflag = 1;
-			switch (*optarg) {
-			case '1':
-				button = Button1;
-				break;
-			case '2':
-				button = Button2;
-				break;
-			default:
-			case '3':
-				button = Button3;
-				break;
-			}
+			rootmodeflag = 1;
+			setbutton(optarg);
 			break;
-		case 'w':
-			wflag = 1;
-			break;
-		case 'P':
-			path_prefix = optarg;
-			path_prefix_size = strlen(optarg);
+		case 'm':
+			setmodifier(optarg);
 			break;
 		default:
 			usage();
@@ -450,17 +509,6 @@ initatoms(void)
 	XInternAtoms(dpy, atomnames, ATOM_LAST, False, atoms);
 }
 
-/* call strdup checking for error */
-static char *
-estrdup(const char *s)
-{
-	char *t;
-
-	if ((t = strdup(s)) == NULL)
-		err(1, "strdup");
-	return t;
-}
-
 /* call malloc checking for error */
 static void *
 emalloc(size_t size)
@@ -472,18 +520,6 @@ emalloc(size_t size)
 	return p;
 }
 
-/* as estrdup, but copy a prefix in */
-static char *
-estrdup_prefix(const char *s, const char *prefix, const size_t prefix_size)
-{
-	char *t = emalloc(strlen(s) + prefix_size + 1);
-
-	strcpy(t, prefix);
-	strcpy(t + prefix_size, s);
-
-	return t;
-}
-
 /* allocate an slice */
 static struct Slice *
 allocslice(const char *label, const char *output, char *file)
@@ -491,16 +527,10 @@ allocslice(const char *label, const char *output, char *file)
 	struct Slice *slice;
 
 	slice = emalloc(sizeof *slice);
-	slice->label = label ? estrdup(label) : NULL;
-	if (!file) {
-		slice->file = NULL;
-	} else if (path_prefix && file[0] != '/' && !(file[0] == '.' && file[1] == '/')) {
-		slice->file = estrdup_prefix(file, path_prefix, path_prefix_size);
-	} else {
-		slice->file = estrdup(file);
-	}
+	slice->label = (label != NULL) ? estrdup(label) : NULL;
+	slice->file = (file != NULL) ? estrdup(file) : NULL;
+	slice->labellen = (slice->label != NULL) ? strlen(slice->label) : 0;
 	slice->y = 0;
-	slice->labellen = (slice->label) ? strlen(slice->label) : 0;
 	slice->next = NULL;
 	slice->submenu = NULL;
 	slice->icon = NULL;
@@ -676,21 +706,41 @@ parse(FILE *fp, int initlevel)
 	return rootmenu;
 }
 
+/* check if path is absolute or relative to current directory */
+static int
+isabsolute(const char *s)
+{
+	return s[0] == '/' || (s[0] == '.' && (s[1] == '/' || (s[1] == '.' && s[2] == '/')));
+}
+
 /* load image from file and scale it to size; return the image and its size */
 static Imlib_Image
 loadicon(const char *file, int size, int *width_ret, int *height_ret)
 {
 	Imlib_Image icon;
 	Imlib_Load_Error errcode;
+	char path[PATH_MAX];
 	const char *errstr;
 	int width;
 	int height;
+	int i;
 
-	icon = imlib_load_image_with_error_return(file, &errcode);
 	if (*file == '\0') {
 		warnx("could not load icon (file name is blank)");
 		return NULL;
-	} else if (icon == NULL) {
+	}
+	if (isabsolute(file))
+		icon = imlib_load_image_with_error_return(file, &errcode);
+	else {
+		for (i = 0; i < niconpaths; i++) {
+			snprintf(path, sizeof(path), "%s/%s", iconpaths[i], file);
+			icon = imlib_load_image_with_error_return(path, &errcode);
+			if (icon != NULL || errcode != IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST) {
+				break;
+			}
+		}
+	}
+	if (icon == NULL) {
 		switch (errcode) {
 		case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
 			errstr = "file does not exist";
@@ -1592,7 +1642,7 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 			slice = getslice(menu, ev.xmotion.x, ev.xmotion.y);
 			if (menu == NULL)
 				break;
-			if (wflag) {
+			if (nowarpflag) {
 				menu->selected = slice;
 			} else if (currmenu != rootmenu && menu != currmenu) {
 				/* motion off a non-root menu */
@@ -1633,7 +1683,7 @@ selectslice:
 			prevmenu = mapmenu(currmenu, prevmenu);
 			currmenu->selected = NULL;
 			copymenu(currmenu);
-			if (!wflag)
+			if (!nowarpflag)
 				XWarpPointer(dpy, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
 			break;
 		case LeaveNotify:
@@ -1768,7 +1818,7 @@ main(int argc, char *argv[])
 	initatoms();
 
 	/* if running in root mode, get button presses from root window */
-	if (rflag)
+	if (rootmodeflag)
 		XGrabButton(dpy, button, AnyModifier, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
 
 	/* generate menus and set them up */
@@ -1780,13 +1830,13 @@ main(int argc, char *argv[])
 	pfd.fd = XConnectionNumber(dpy);
 	pfd.events = POLLIN;
 	do {
-		if (rflag)
+		if (rootmodeflag)
 			XNextEvent(dpy, &ev);
-		if (!rflag ||
+		if (!rootmodeflag ||
 		    (ev.type == ButtonPress &&
 		     ((modifier && ev.xbutton.state == modifier) ||
 		      (ev.xbutton.subwindow == None)))) {
-			if (rflag && pflag) {
+			if (rootmodeflag && passclickflag) {
 				XAllowEvents(dpy, ReplayPointer, CurrentTime);
 			}
 			getmonitor(&mon);
@@ -1800,9 +1850,10 @@ main(int argc, char *argv[])
 		} else {
 			XAllowEvents(dpy, ReplayPointer, CurrentTime);
 		}
-	} while (rflag);
+	} while (rootmodeflag);
 
 	/* free stuff */
+	free(iconstring);
 	cleanmenu(rootmenu);
 	cleanpictures();
 	cleandc();

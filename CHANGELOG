@@ -1,5 +1,12 @@
                                CHANGELOG
 
+3.0.0 (2022-03-19).
+• Removed options -r, -m, -p and -P (check manual for new options).
+• Fix missing header (#14).
+• Fix annoying behavior (don't exit when icons are missing) (#15).
+• Fix mouse movement triggering menu closing with -w.
+• Fix Makefile.
+
 2.5.0 (2021-11-24).
 • Added border for tooltip window.
 • Added menu navigation without releasing button.
