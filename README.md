@@ -1,7 +1,7 @@
 # πmenu
 
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/63266536/89110619-10034f00-d43c-11ea-92a6-275eb50ef881.png", title="demo"/>
+  <img src="https://user-images.githubusercontent.com/63266536/159123820-7f1a5c97-87bd-4be2-a4a5-870cb695a3ba.png", title="demo"/>
 </p>
 
 πmenu is a pie menu utility for X.
@@ -21,7 +21,6 @@ The files are:
 * `./README`:     This file.
 * `./Makefile`:   The makefile.
 * `./config.h`:   The hardcoded default configuration for πmenu.
-* `./config.mk`:  The settings for the makefile.
 * `./pmenu.1`:    The manual file (man page) for πmenu.
 * `./pmenu.c`:    The source code of πmenu.
 * `./pmenu.sh`:   A sample script illustrating how to use πmenu.
@@ -29,7 +28,8 @@ The files are:
 
 ## Installation
 
-First, edit `./config.mk` to match your local setup.
+First, edit `./Makefile` or set the proper environment variables to
+match your local setup.
 
 In order to build πmenu you need the Imlib2, Xlib and Xft header files
 (and some X extensions: XShape and Xinerama).
