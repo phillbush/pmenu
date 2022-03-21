@@ -2,13 +2,13 @@
 PROG = pmenu
 
 # paths
-PREFIX = /usr/local
-MANPREFIX = ${PREFIX}/share/man
-LOCALINC = /usr/local/include
-LOCALLIB = /usr/local/lib
-X11INC = /usr/X11R6/include
-X11LIB = /usr/X11R6/lib
-FREETYPEINC = /usr/include/freetype2
+PREFIX ?= /usr/local
+MANPREFIX ?= ${PREFIX}/share/man
+LOCALINC ?= /usr/local/include
+LOCALLIB ?= /usr/local/lib
+X11INC ?= /usr/X11R6/include
+X11LIB ?= /usr/X11R6/lib
+FREETYPEINC ?= /usr/include/freetype2
 # OpenBSD (uncomment)
 #FREETYPEINC = ${X11INC}/freetype2
 
@@ -22,7 +22,7 @@ CFLAGS += ${DEBUG} -Wall -Wextra ${INCS} ${CPPFLAGS}
 LDFLAGS += ${LIBS}
 
 # compiler and linker
-CC = cc
+CC ?= cc
 
 SRCS = ${PROG}.c
 OBJS = ${SRCS:.c=.o}

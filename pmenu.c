@@ -175,18 +175,18 @@ static XClassHint classh;
 static struct Pie pie;
 
 /* flags */
-static int rootmodeflag = 0;                    /* wheter to run in root mode */
-static int nowarpflag = 0;                      /* whether to disable pointer warping */
-static int passclickflag = 0;                   /* whether to pass click to root window */
+static int rootmodeflag = 0;            /* wheter to run in root mode */
+static int nowarpflag = 0;              /* whether to disable pointer warping */
+static int passclickflag = 0;           /* whether to pass click to root window */
 
 /* arguments */
-static unsigned int button = AnyButton;         /* button to trigger pmenu in root mode */
-static unsigned int modifier = AnyModifier;     /* modifier to trigger pmenu */
+static unsigned int button = 0;         /* button to trigger pmenu in root mode */
+static unsigned int modifier = 0;       /* modifier to trigger pmenu */
 
 /* icons paths */
-static char *iconstring = NULL;                 /* string read from getenv */
-static char *iconpaths[MAXPATHS];               /* paths to icon directories */
-static int niconpaths = 0;                      /* number of paths to icon directories */
+static char *iconstring = NULL;         /* string read from getenv */
+static char *iconpaths[MAXPATHS];       /* paths to icon directories */
+static int niconpaths = 0;              /* number of paths to icon directories */
 
 #include "config.h"
 
@@ -588,8 +588,8 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	menu->caller = NULL;
 	menu->selected = NULL;
 	menu->nslices = 0;
-	menu->x = 0;    /* calculated by setupmenu() */
-	menu->y = 0;    /* calculated by setupmenu() */
+	menu->x = 0;
+	menu->y = 0;
 	menu->level = level;
 
 	/* create pixmap and picture */
@@ -1261,7 +1261,6 @@ unmapmenu(struct Menu *currmenu)
 {
 	struct Menu *menu;
 
-	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu; menu = menu->parent) {
 		menu->selected = NULL;
 		XUnmapWindow(dpy, menu->win);
