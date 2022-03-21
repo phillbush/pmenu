@@ -1,5 +1,8 @@
                                CHANGELOG
 
+3.0.1 (2022-03-21).
+• Fix Makefile.
+
 3.0.0 (2022-03-19).
 • Removed options -r, -m, -p and -P (check manual for new options).
 • Fix missing header (#14).

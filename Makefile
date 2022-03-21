@@ -1,6 +1,3 @@
-# program name
-PROG = pmenu
-
 # paths
 PREFIX ?= /usr/local
 MANPREFIX ?= ${PREFIX}/share/man
@@ -16,35 +13,29 @@ FREETYPEINC ?= /usr/include/freetype2
 INCS += -I${LOCALINC} -I${X11INC} -I${FREETYPEINC}
 LIBS += -L${LOCALLIB} -L${X11LIB} -lm -lfontconfig -lXft -lX11 -lXinerama -lXrender -lXext -lImlib2
 
-# flags
-#DEBUG += -g -O0
-CFLAGS += ${DEBUG} -Wall -Wextra ${INCS} ${CPPFLAGS}
-LDFLAGS += ${LIBS}
-
-# compiler and linker
-CC ?= cc
-
+# files
+PROG = pmenu
 SRCS = ${PROG}.c
 OBJS = ${SRCS:.c=.o}
 
 all: ${PROG}
 
 ${PROG}: ${OBJS}
-	${CC} -o $@ ${OBJS} ${LDFLAGS}
+	${CC} ${LDFLAGS} -o $@ ${OBJS} ${LIBS}
 
 ${OBJS}: config.h
 
 .c.o:
-	${CC} ${CFLAGS} -c $<
+	${CC} ${CFLAGS} ${CPPFLAGS} ${INCS} -c $<
 
 clean:
-	-rm ${OBJS} ${PROG}
+	-rm -f ${OBJS} ${PROG} ${PROG:=.core}
 
 install: all
 	mkdir -p ${DESTDIR}${PREFIX}/bin
-	install -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
 	mkdir -p ${DESTDIR}${MANPREFIX}/man1
-	install -m 644 ${PROG}.1 ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
+	${INSTALL} -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
+	${INSTALL} -m 644 ${PROG}.1 ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
 
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
