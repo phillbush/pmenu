@@ -34,8 +34,8 @@ clean:
 install: all
 	mkdir -p ${DESTDIR}${PREFIX}/bin
 	mkdir -p ${DESTDIR}${MANPREFIX}/man1
-	${INSTALL} -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
-	${INSTALL} -m 644 ${PROG}.1 ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
+	install -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
+	install -m 644 ${PROG}.1 ${DESTDIR}${MANPREFIX}/man1/${PROG}.1
 
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
