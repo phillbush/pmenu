@@ -1,3 +1,5 @@
+#include <sys/wait.h>
+
 #include <ctype.h>
 #include <err.h>
 #include <math.h>
@@ -7,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -17,6 +20,7 @@
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
+#define SHELL    "sh"
 #define CLASS    "PMenu"
 #define TTPAD    4              /* padding for the tooltip */
 #define TTVERT   30             /* vertical distance from mouse to place tooltip */
@@ -56,6 +60,7 @@ struct Config {
 	int triangle_width;
 	int triangle_height;
 	int triangle_distance;
+	int execcommand;
 	unsigned diameter_pixels;
 	double separatorbeg;
 	double separatorend;
@@ -194,7 +199,7 @@ static int niconpaths = 0;              /* number of paths to icon directories *
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-w] [(-x|-X) [modifier-]button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-ew] [(-x|-X) [modifier-]button]\n");
 	exit(1);
 }
 
@@ -207,6 +212,26 @@ estrdup(const char *s)
 	if ((t = strdup(s)) == NULL)
 		err(1, "strdup");
 	return t;
+}
+
+/* call fork checking for error; exit on error */
+static pid_t
+efork(void)
+{
+	pid_t pid;
+
+	if ((pid = fork()) < 0)
+		err(1, "fork");
+	return pid;
+}
+
+/* call execlp on sh -c checking for error; exit on error */
+static void
+eexecsh(const char *cmd)
+{
+	if (execlp(SHELL, SHELL, "-c", cmd, NULL) == -1) {
+		err(1, SHELL);
+	}
 }
 
 /* read xrdb for configuration options */
@@ -248,12 +273,7 @@ setbutton(char *s)
 
 	if ((len = strlen(s)) < 1)
 		return;
-	switch (s[len-1]) {
-	case '1': button = Button1; break;
-	case '2': button = Button2; break;
-	case '3': button = Button3; break;
-	default:  button = atoi(&s[len-1]); break;
-	}
+	button = strtoul(s, NULL, 10);
 }
 
 /* set modifier global variable */
@@ -264,7 +284,8 @@ setmodifier(char *s)
 
 	if ((len = strlen(s)) < 1)
 		return;
-	switch (s[len-1]) {
+	switch (s[0]) {
+	case '0': modifier = AnyModifier; break;
 	case '1': modifier = Mod1Mask; break;
 	case '2': modifier = Mod2Mask; break;
 	case '3': modifier = Mod3Mask; break;
@@ -308,8 +329,11 @@ getoptions(int argc, char **argv)
 	if ((s = strrchr(argv[0], '/')) != NULL)
 		classh.res_name = s + 1;
 	parseiconpaths(getenv(ICONPATH));
-	while ((ch = getopt(argc, argv, "wx:X:P:r:m:p")) != -1) {
+	while ((ch = getopt(argc, argv, "ewx:X:P:r:m:p")) != -1) {
 		switch (ch) {
+		case 'e':
+			config.execcommand = !config.execcommand;
+			break;
 		case 'w':
 			nowarpflag = 1;
 			break;
@@ -319,11 +343,11 @@ getoptions(int argc, char **argv)
 		case 'x':
 			rootmodeflag = 1;
 			s = optarg;
-			setbutton(s);
+			setmodifier(s);
 			if ((t = strchr(s, '-')) == NULL)
 				return;
-			*t = '\0';
-			setmodifier(s);
+			*(t++) = '\0';
+			setbutton(t);
 			break;
 
 		/* the options below are deprecated and may be removed in the future */
@@ -1604,6 +1628,25 @@ tooltip(struct Menu *currmenu, XEvent *ev)
 	}
 }
 
+/* item was entered, print its output or run it */
+static void
+enteritem(struct Slice *slice)
+{
+	if (config.execcommand) {
+		if (efork() == 0) {
+			if (efork() == 0) {
+				eexecsh(slice->output);
+				exit(1);
+			}
+			exit(1);
+		}
+		wait(NULL);
+	} else {
+		printf("%s\n", slice->output);
+		fflush(stdout);
+	}
+}
+
 /* run event loop */
 static void
 run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
@@ -1675,8 +1718,7 @@ selectslice:
 					currmenu = menu;
 				}
 			} else {
-				printf("%s\n", slice->output);
-				fflush(stdout);
+				enteritem(slice);
 				goto done;
 			}
 			prevmenu = mapmenu(currmenu, prevmenu);
@@ -1833,7 +1875,8 @@ main(int argc, char *argv[])
 			XNextEvent(dpy, &ev);
 		if (!rootmodeflag ||
 		    (ev.type == ButtonPress &&
-		     ((modifier && ev.xbutton.state == modifier) ||
+		     (modifier == AnyModifier ||
+		      (modifier && ev.xbutton.state == modifier) ||
 		      (ev.xbutton.subwindow == None)))) {
 			if (rootmodeflag && passclickflag) {
 				XAllowEvents(dpy, ReplayPointer, CurrentTime);
