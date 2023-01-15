@@ -199,7 +199,7 @@ static int niconpaths = 0;              /* number of paths to icon directories *
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-ew] [(-x|-X) [modifier-]button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-ew] [-d diameter] [(-x|-X) [modifier-]button]\n");
 	exit(1);
 }
 
@@ -329,8 +329,11 @@ getoptions(int argc, char **argv)
 	if ((s = strrchr(argv[0], '/')) != NULL)
 		classh.res_name = s + 1;
 	parseiconpaths(getenv(ICONPATH));
-	while ((ch = getopt(argc, argv, "ewx:X:P:r:m:p")) != -1) {
+	while ((ch = getopt(argc, argv, "d:ewx:X:P:r:m:p")) != -1) {
 		switch (ch) {
+		case 'd':
+			config.diameter_pixels = strtoul(optarg, NULL, 10);
+			break;
 		case 'e':
 			config.execcommand = !config.execcommand;
 			break;
