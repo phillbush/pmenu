@@ -25,6 +25,7 @@
 
 #define SHELL    "sh"
 #define CLASS    "PMenu"
+#define NAME     "pmenu"
 #define TTPAD    4              /* padding for the tooltip */
 #define TTVERT   30             /* vertical distance from mouse to place tooltip */
 #define MAXPATHS 128            /* maximal number of paths to look for icons */
@@ -39,21 +40,48 @@
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 
+#define RESOURCES                                                       \
+	X(BORDER_CLR,   "BorderColor",          "borderColor")          \
+	X(BORDER_WID,   "BorderWidth",          "borderWidth")          \
+	X(DIAMETER,     "Diameter",             "diameter")             \
+	X(FACE_NAME,    "FaceName",             "faceName")             \
+	X(FACE_SIZE,    "FaceSize",             "faceSize")             \
+	X(NORMAL_BG,    "Background",           "background")           \
+	X(NORMAL_FG,    "Foreground",           "foreground")           \
+	X(SELECT_BG,    "ActiveBackground",     "activeBackground")     \
+	X(SELECT_FG,    "ActiveForeground",     "activeForeground")     \
+	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor")    \
+	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor")    \
+	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor")
+
 #define DEF_COLOR_BG     (XRenderColor){ .red = 0x3100, .green = 0x3100, .blue = 0x3100, .alpha = 0xFFFF }
 #define DEF_COLOR_FG     (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
 #define DEF_COLOR_SELBG  (XRenderColor){ .red = 0x3400, .green = 0x6500, .blue = 0xA400, .alpha = 0xFFFF }
 #define DEF_COLOR_SELFG  (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
+#define DEF_COLOR_BORDER (XRenderColor){ .red = 0x3100, .green = 0x3100, .blue = 0x3100, .alpha = 0xFFFF }
 
 enum {
 	SCHEME_NORMAL,
 	SCHEME_SELECT,
+	SCHEME_BORDER,
 	SCHEME_LAST,
 };
 
 enum {
-	COLOR_BG,
-	COLOR_FG,
-	COLOR_LAST,
+	COLOR_BG = 0,
+	COLOR_FG = 1,
+
+	COLOR_TOP = 0,
+	COLOR_BOT = 1,
+
+	COLOR_LAST = 2,
+};
+
+enum Resource {
+#define X(res, s1, s2) res,
+	RESOURCES
+	NRESOURCES
+#undef  X
 };
 
 /* state of command to popen */
@@ -154,13 +182,17 @@ struct Monitor {
 	int cursx, cursy;
 };
 
-/* geometry of the pie and bitmap that shapes it */
 struct Pie {
 	Window dummy;
 
 	GC gc;              /* graphic context of the bitmaps */
 	Drawable clip;      /* bitmap shaping the clip region (without borders) */
 	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
+
+	struct {
+		XrmClass class;
+		XrmName name;
+	} application, resources[NRESOURCES];
 
 	int fulldiameter;   /* diameter of the pie + 2*border*/
 	int diameter;       /* diameter of the pie */
@@ -182,9 +214,7 @@ static Display *display;
 static Visual *visual;
 static Window rootwin;
 static Colormap colormap;
-static XrmDatabase xdb;
 static XRenderPictFormat *xformat, *alphaformat;
-static char *xrm;
 static int screen;
 static int depth;
 static struct DC dc;
@@ -272,37 +302,6 @@ eexecsh(const char *cmd)
 	if (execlp(SHELL, SHELL, "-c", cmd, NULL) == -1) {
 		err(1, SHELL);
 	}
-}
-
-/* read xrdb for configuration options */
-static void
-getresources(void)
-{
-	char *type;
-	XrmValue xval;
-
-	if (xrm == NULL || xdb == NULL)
-		return;
-	if (XrmGetResource(xdb, "pmenu.diameterWidth", "*", &type, &xval) == True)
-		config.diameter_pixels = strtoul(xval.addr, NULL, 10);
-	if (XrmGetResource(xdb, "pmenu.borderWidth", "*", &type, &xval) == True)
-		config.border_pixels = strtoul(xval.addr, NULL, 10);
-	if (XrmGetResource(xdb, "pmenu.separatorWidth", "*", &type, &xval) == True)
-		config.separator_pixels = strtoul(xval.addr, NULL, 10);
-	if (XrmGetResource(xdb, "pmenu.background", "*", &type, &xval) == True)
-		config.background_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.foreground", "*", &type, &xval) == True)
-		config.foreground_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.selbackground", "*", &type, &xval) == True)
-		config.selbackground_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.selforeground", "*", &type, &xval) == True)
-		config.selforeground_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.separator", "*", &type, &xval) == True)
-		config.separator_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.border", "*", &type, &xval) == True)
-		config.border_color = xval.addr;
-	if (XrmGetResource(xdb, "pmenu.font", "*", &type, &xval) == True)
-		config.font = xval.addr;
 }
 
 /* set button global variable */
@@ -1274,7 +1273,7 @@ drawtooltip(struct Slice *slice)
 		display,
 		PictOpSrc,
 		slice->ttpict,
-		&dc.colors[SCHEME_NORMAL][COLOR_FG].chans,
+		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
 		0, 0,
 		slice->ttw,
 		pie.tooltiph
@@ -1675,6 +1674,155 @@ cleandc(void)
 	XFreeGC(display, dc.gc);
 }
 
+static char *
+getresource(XrmDatabase xdb, enum Resource resource)
+{
+	XrmQuark name[] = {
+		pie.application.name,
+		pie.resources[resource].name,
+		NULLQUARK,
+	};
+	XrmQuark class[] = {
+		pie.application.class,
+		pie.resources[resource].class,
+		NULLQUARK,
+	};
+	XrmRepresentation tmp;
+	XrmValue xval;
+
+	if (XrmQGetResource(xdb, name, class, &tmp, &xval))
+		return xval.addr;
+	return NULL;
+}
+
+static void
+setcolor(int scheme, int colornum, const char *colorname)
+{
+	XColor color;
+
+	if (colorname == NULL)
+		return;
+	if (!XParseColor(display, colormap, colorname, &color)) {
+		warnx("%s: unknown color name", colorname);
+		return;
+	}
+	dc.colors[scheme][colornum].chans = (XRenderColor){
+		.red   = FLAG(color.flags, DoRed)   ? color.red   : 0x0000,
+		.green = FLAG(color.flags, DoGreen) ? color.green : 0x0000,
+		.blue  = FLAG(color.flags, DoBlue)  ? color.blue  : 0x0000,
+		.alpha = 0xFFFF,
+	};
+	XRenderFillRectangle(
+		display,
+		PictOpSrc,
+		dc.colors[scheme][colornum].pict,
+		&dc.colors[scheme][colornum].chans,
+		0, 0, 1, 1
+	);
+}
+
+static void
+setfont(const char *facename, double facesize)
+{
+	CtrlFontSet *fontset;
+
+	if (facename == NULL)
+		facename = "xft:";
+	fontset = ctrlfnt_open(
+		display,
+		screen,
+		visual,
+		colormap,
+		facename,
+		facesize
+	);
+	if (fontset == NULL)
+		return;
+	dc.fontset = fontset;
+	dc.fonth = ctrlfnt_height(fontset);
+}
+
+static XrmDatabase
+loadxdb(const char *str)
+{
+	return XrmGetStringDatabase(str);
+}
+
+static void
+loadresources(const char *str)
+{
+	XrmDatabase xdb;
+	char *value;
+	enum Resource resource;
+	char *endp;
+	char *fontname = NULL;
+	long l;
+	double d;
+	double fontsize = 0.0;
+	int changefont = FALSE;
+
+	if (str == NULL)
+		return;
+	if ((xdb = loadxdb(str)) == NULL)
+		return;
+	for (resource = 0; resource < NRESOURCES; resource++) {
+		value = getresource(xdb, resource);
+		if (value == NULL)
+			continue;
+		switch (resource) {
+		case SHADOW_BOT:
+			setcolor(SCHEME_BORDER, COLOR_BOT, value);
+			break;
+		case BORDER_CLR:
+			setcolor(SCHEME_BORDER, COLOR_TOP, value);
+			setcolor(SCHEME_BORDER, COLOR_BOT, value);
+			break;
+		case SHADOW_TOP:
+			setcolor(SCHEME_BORDER, COLOR_TOP, value);
+			break;
+		case BORDER_WID:
+			l = strtol(value, &endp, 10);
+			if (value[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
+				pie.border = l;
+			break;
+		case DIAMETER:
+			l = strtol(value, &endp, 10);
+			if (value[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
+				pie.diameter = l;
+			break;
+		case FACE_NAME:
+			fontname = value;
+			changefont = TRUE;
+			break;
+		case FACE_SIZE:
+			d = strtod(value, &endp);
+			if (value[0] != '\0' && *endp == '\0' && d > 0.0 && d <= 100.0) {
+				fontsize = d;
+				changefont = TRUE;
+			}
+			break;
+		case NORMAL_BG:
+		case SHADOW_MID:
+			setcolor(SCHEME_NORMAL, COLOR_BG, value);
+			break;
+		case NORMAL_FG:
+			setcolor(SCHEME_NORMAL, COLOR_FG, value);
+			break;
+		case SELECT_BG:
+			setcolor(SCHEME_SELECT, COLOR_BG, value);
+			break;
+		case SELECT_FG:
+			setcolor(SCHEME_SELECT, COLOR_FG, value);
+			break;
+		default:
+			break;
+		}
+	}
+	if (changefont)
+		setfont(fontname, fontsize);
+	XrmDestroyDatabase(xdb);
+}
+
 static int
 initxconn(void)
 {
@@ -1687,8 +1835,6 @@ initxconn(void)
 	}
 	screen = DefaultScreen(display);
 	rootwin = RootWindow(display, screen);
-	if ((xrm = XResourceManagerString(display)) != NULL)
-		xdb = XrmGetStringDatabase(xrm);
 	return RETURN_SUCCESS;
 }
 
@@ -1739,6 +1885,28 @@ error:
 }
 
 static int
+initresources(void)
+{
+	static struct {
+		const char *class, *name;
+	} resourceids[NRESOURCES] = {
+#define X(res, s1, s2) [res] = { .class = s1, .name = s2, },
+		RESOURCES
+#undef  X
+	};
+	int i;
+
+	XrmInitialize();
+	pie.application.class = XrmPermStringToQuark(CLASS);
+	pie.application.name = XrmPermStringToQuark(NAME);
+	for (i = 0; i < NRESOURCES; i++) {
+		pie.resources[i].class = XrmPermStringToQuark(resourceids[i].class);
+		pie.resources[i].name = XrmPermStringToQuark(resourceids[i].name);
+	}
+	return RETURN_SUCCESS;
+}
+
+static int
 inittheme(void)
 {
 	XGCValues values;
@@ -1749,6 +1917,8 @@ inittheme(void)
 	dc.colors[SCHEME_NORMAL][COLOR_FG].chans = DEF_COLOR_FG;
 	dc.colors[SCHEME_SELECT][COLOR_BG].chans = DEF_COLOR_SELBG;
 	dc.colors[SCHEME_SELECT][COLOR_FG].chans = DEF_COLOR_SELFG;
+	dc.colors[SCHEME_BORDER][COLOR_TOP].chans = DEF_COLOR_BORDER;
+	dc.colors[SCHEME_BORDER][COLOR_BOT].chans = DEF_COLOR_BORDER;
 	for (i = 0; i < SCHEME_LAST; i++) {
 		for (j = 0; j < COLOR_LAST; j++) {
 			dc.colors[i][j].pix = XCreatePixmap(
@@ -1783,10 +1953,13 @@ inittheme(void)
 			);
 		}
 	}
-	dc.fontset = ctrlfnt_open(display, screen, visual, colormap, config.font, 0.0);
+	loadresources(XResourceManagerString(display));
 	if (dc.fontset == NULL)
-		errx(1, "could not open font");
-	dc.fonth = ctrlfnt_height(dc.fontset);
+		setfont(NULL, 0.0);
+	if (dc.fontset == NULL) {
+		warnx("could not load any font");
+		return RETURN_FAILURE;
+	}
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
@@ -1802,6 +1975,7 @@ main(int argc, char *argv[])
 	int (*initsteps[])(void) = {
 		initxconn,
 		initvisual,
+		initresources,
 		inittheme,
 	};
 	struct pollfd pfd;
@@ -1816,7 +1990,6 @@ main(int argc, char *argv[])
 			goto error;
 
 	/* get configuration */
-	getresources();
 	getoptions(argc, argv);
 
 	/* imlib2 stuff */
