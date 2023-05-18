@@ -1,5 +1,5 @@
 PROG = pmenu
-OBJS = ${PROG:=.o}
+OBJS = ${PROG:=.o} ctrlfnt.o
 SRCS = ${OBJS:.o=.c}
 MAN  = ${PROG:=.1}
 

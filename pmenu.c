@@ -20,6 +20,8 @@
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
+#include "ctrlfnt.h"
+
 #define SHELL    "sh"
 #define CLASS    "PMenu"
 #define TTPAD    4              /* padding for the tooltip */
@@ -75,9 +77,7 @@ struct DC {
 
 	GC gc;                          /* graphics context */
 
-	FcPattern *pattern;
-	XftFont **fonts;
-	size_t nfonts;
+	CtrlFontSet *fontset;
 	int fonth;
 
 	XRenderPictureAttributes pictattr;
@@ -110,6 +110,7 @@ struct Slice {
 	int ttw;                /* tooltip width */
 	Window tooltip;         /* tooltip that appears when hovering a slice */
 	Drawable ttpix;         /* pixmap for the tooltip */
+	Picture ttpict;         /* pixmap for the tooltip */
 };
 
 /* menu structure */
@@ -387,44 +388,6 @@ ealloccolor(const char *s, XftColor *color)
 		errx(1, "could not allocate color: %s", s);
 }
 
-/* parse color string */
-static void
-parsefonts(const char *s)
-{
-	const char *p;
-	char buf[1024];
-	size_t nfont = 0;
-
-	dc.nfonts = 1;
-	for (p = s; *p; p++)
-		if (*p == ',')
-			dc.nfonts++;
-
-	if ((dc.fonts = calloc(dc.nfonts, sizeof *dc.fonts)) == NULL)
-		err(1, "calloc");
-
-	p = s;
-	while (*p != '\0') {
-		size_t i;
-
-		i = 0;
-		while (isspace(*p))
-			p++;
-		while (i < sizeof buf && *p != '\0' && *p != ',')
-			buf[i++] = *p++;
-		if (i >= sizeof buf)
-			errx(1, "font name too long");
-		if (*p == ',')
-			p++;
-		buf[i] = '\0';
-		if (nfont == 0)
-			if ((dc.pattern = FcNameParse((FcChar8 *)buf)) == NULL)
-				errx(1, "the first font in the cache must be loaded from a font string");
-		if ((dc.fonts[nfont++] = XftFontOpenName(dpy, screen, buf)) == NULL)
-			errx(1, "could not load font");
-	}
-}
-
 /* init draw context */
 static void
 initdc(void)
@@ -441,8 +404,11 @@ initdc(void)
 	ealloccolor(config.separator_color,     &dc.separator);
 	ealloccolor(config.border_color,        &dc.border);
 
-	/* parse fonts */
-	parsefonts(config.font);
+	ctrlfnt_init();
+	dc.fontset = ctrlfnt_open(dpy, screen, visual, colormap, config.font, 0.0);
+	if (dc.fontset == NULL)
+		errx(1, "could not open font");
+	dc.fonth = ctrlfnt_height(dc.fontset);
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
@@ -487,7 +453,7 @@ initpie(void)
 	pie.diameter = config.diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
-	pie.tooltiph = dc.fonts[0]->height + 2 * TTPAD;
+	pie.tooltiph = dc.fonth + 2 * TTPAD;
 
 	/* set the geometry of the triangle for submenus */
 	pie.triangleouter = pie.radius - config.triangle_distance;
@@ -826,138 +792,6 @@ loadicon(const char *file, int size, int *width_ret, int *height_ret)
 	return icon;
 }
 
-/* get next utf8 char from s return its codepoint and set next_ret to pointer to end of character */
-static FcChar32
-getnextutf8char(const char *s, const char **next_ret)
-{
-	static const unsigned char utfbyte[] = {0x80, 0x00, 0xC0, 0xE0, 0xF0};
-	static const unsigned char utfmask[] = {0xC0, 0x80, 0xE0, 0xF0, 0xF8};
-	static const FcChar32 utfmin[] = {0, 0x00,  0x80,  0x800,  0x10000};
-	static const FcChar32 utfmax[] = {0, 0x7F, 0x7FF, 0xFFFF, 0x10FFFF};
-	/* 0xFFFD is the replacement character, used to represent unknown characters */
-	static const FcChar32 unknown = 0xFFFD;
-	FcChar32 ucode;         /* FcChar32 type holds 32 bits */
-	size_t usize = 0;       /* n' of bytes of the utf8 character */
-	size_t i;
-
-	*next_ret = s+1;
-
-	/* get code of first byte of utf8 character */
-	for (i = 0; i < sizeof utfmask; i++) {
-		if (((unsigned char)*s & utfmask[i]) == utfbyte[i]) {
-			usize = i;
-			ucode = (unsigned char)*s & ~utfmask[i];
-			break;
-		}
-	}
-
-	/* if first byte is a continuation byte or is not allowed, return unknown */
-	if (i == sizeof utfmask || usize == 0)
-		return unknown;
-
-	/* check the other usize-1 bytes */
-	s++;
-	for (i = 1; i < usize; i++) {
-		*next_ret = s+1;
-		/* if byte is nul or is not a continuation byte, return unknown */
-		if (*s == '\0' || ((unsigned char)*s & utfmask[0]) != utfbyte[0])
-			return unknown;
-		/* 6 is the number of relevant bits in the continuation byte */
-		ucode = (ucode << 6) | ((unsigned char)*s & ~utfmask[0]);
-		s++;
-	}
-
-	/* check if ucode is invalid or in utf-16 surrogate halves */
-	if (!BETWEEN(ucode, utfmin[usize], utfmax[usize])
-	    || BETWEEN (ucode, 0xD800, 0xDFFF))
-		return unknown;
-
-	return ucode;
-}
-
-/* get which font contains a given code point */
-static XftFont *
-getfontucode(FcChar32 ucode)
-{
-	FcCharSet *fccharset = NULL;
-	FcPattern *fcpattern = NULL;
-	FcPattern *match = NULL;
-	XftFont *retfont = NULL;
-	XftResult result;
-	size_t i;
-
-	for (i = 0; i < dc.nfonts; i++)
-		if (XftCharExists(dpy, dc.fonts[i], ucode) == FcTrue)
-			return dc.fonts[i];
-
-	/* create a charset containing our code point */
-	fccharset = FcCharSetCreate();
-	FcCharSetAddChar(fccharset, ucode);
-
-	/* create a pattern akin to the dc.pattern but containing our charset */
-	if (fccharset) {
-		fcpattern = FcPatternDuplicate(dc.pattern);
-		FcPatternAddCharSet(fcpattern, FC_CHARSET, fccharset);
-	}
-
-	/* find pattern matching fcpattern */
-	if (fcpattern) {
-		FcConfigSubstitute(NULL, fcpattern, FcMatchPattern);
-		FcDefaultSubstitute(fcpattern);
-		match = XftFontMatch(dpy, screen, fcpattern, &result);
-	}
-
-	/* if found a pattern, open its font */
-	if (match) {
-		retfont = XftFontOpenPattern(dpy, match);
-		if (retfont && XftCharExists(dpy, retfont, ucode) == FcTrue) {
-			if ((dc.fonts = realloc(dc.fonts, dc.nfonts+1)) == NULL)
-				err(1, "realloc");
-			dc.fonts[dc.nfonts] = retfont;
-			return dc.fonts[dc.nfonts++];
-		} else {
-			XftFontClose(dpy, retfont);
-		}
-	}
-
-	/* in case no fount was found, return the first one */
-	return dc.fonts[0];
-}
-
-/* draw text into XftDraw */
-static int
-drawtext(XftDraw *draw, XftColor *color, int x, int y, const char *text)
-{
-	int textwidth = 0;
-
-	while (*text) {
-		XftFont *currfont;
-		XGlyphInfo ext;
-		FcChar32 ucode;
-		const char *next;
-		size_t len;
-
-		ucode = getnextutf8char(text, &next);
-		currfont = getfontucode(ucode);
-
-		len = next - text;
-		XftTextExtentsUtf8(dpy, currfont, (XftChar8 *)text, len, &ext);
-		textwidth += ext.xOff;
-
-		if (draw) {
-			int texty;
-
-			texty = y + (currfont->ascent - currfont->descent)/2;
-			XftDrawStringUtf8(draw, color, currfont, x, texty, (XftChar8 *)text, len);
-			x += ext.xOff;
-		}
-
-		text = next;
-	}
-
-	return textwidth;
-}
-
 /* setup position of and content of menu's slices */
 /* recursivelly setup menu configuration and its pixmap */
 static void
@@ -983,7 +817,10 @@ setslices(struct Menu *menu)
 		slice->angleb = a + menu->half;
 
 		/* get length of slice->label rendered in the font */
-		textwidth = (slice->label) ? drawtext(NULL, NULL, 0, 0, slice->label): 0;
+		if (slice->label != NULL)
+			textwidth = ctrlfnt_width(dc.fontset, slice->label, strlen(slice->label));
+		else
+			textwidth = 0;
 
 		/* get position of slice's label */
 		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
@@ -1029,6 +866,7 @@ setslices(struct Menu *menu)
 			                               CWOverrideRedirect | CWBackPixel | CWEventMask | CWSaveUnder | CWBorderPixel,
 			                               &swa);
 			slice->ttpix = XCreatePixmap(dpy, slice->tooltip, slice->ttw, pie.tooltiph, depth);
+			slice->ttpict = XRenderCreatePicture(dpy, slice->ttpix, xformat, 0, NULL);
 			XChangeProperty(dpy, slice->tooltip, atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
 			                PropModeReplace, (unsigned char *)&atoms[NET_WM_WINDOW_TYPE_TOOLTIP], 1);
 
@@ -1036,6 +874,7 @@ setslices(struct Menu *menu)
 			slice->ttw = 0;
 			slice->tooltip = None;
 			slice->ttpix = None;
+			slice->ttpict = None;
 		}
 
 		/* call recursivelly */
@@ -1381,18 +1220,20 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 {
 	struct Slice *slice;
 	XftColor *color;
-	XftDraw *draw;
 	Drawable pixmap;
 	Picture picture;
 	Picture source;
+	Picture fg;
 
 	if (selected) {
 		pixmap = selected->pixmap;
 		picture = selected->picture;
+		fg = pie.selfg;
 		selected->drawn = 1;
 	} else {
 		pixmap = menu->pixmap;
 		picture = menu->picture;
+		fg = pie.fg;
 		menu->drawn = 1;
 	}
 
@@ -1417,10 +1258,20 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			imlib_context_set_image(slice->icon);
 			imlib_render_image_on_drawable(slice->iconx, slice->icony);
 		} else {                        /* otherwise, draw the label */
-			draw = XftDrawCreate(dpy, pixmap, visual, colormap);
 			XSetForeground(dpy, dc.gc, color[ColorFG].pixel);
-			drawtext(draw, &color[ColorFG], slice->labelx, slice->labely, slice->label);
-			XftDrawDestroy(draw);
+			ctrlfnt_draw(
+				dc.fontset,
+				picture,
+				fg,
+				(XRectangle){
+					.x = slice->labelx,
+					.y = slice->labely,
+					.width = pie.radius,
+					.height = dc.fonth,
+				},
+				slice->label,
+				strlen(slice->label)
+			);
 		}
 
 		/* draw separator */
@@ -1437,14 +1288,23 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 static void
 drawtooltip(struct Slice *slice)
 {
-	XftDraw *draw;
 
 	XSetForeground(dpy, dc.gc, dc.normal[ColorBG].pixel);
 	XFillRectangle(dpy, slice->ttpix, dc.gc, 0, 0, slice->ttw, pie.tooltiph);
-	draw = XftDrawCreate(dpy, slice->ttpix, visual, colormap);
 	XSetForeground(dpy, dc.gc, dc.normal[ColorFG].pixel);
-	drawtext(draw, &dc.normal[ColorFG], TTPAD, pie.tooltiph / 2, slice->label);
-	XftDrawDestroy(draw);
+	ctrlfnt_draw(
+		dc.fontset,
+		slice->ttpict,
+		pie.fg,
+		(XRectangle){
+			.x = TTPAD,
+			.y = pie.tooltiph / 2,
+			.width = slice->ttw,
+			.height = dc.fonth,
+		},
+		slice->label,
+		strlen(slice->label)
+	);
 	slice->ttdrawn = 1;
 }
 
@@ -1530,6 +1390,8 @@ cleanmenu(struct Menu *menu)
 			XDestroyWindow(dpy, slice->tooltip);
 		if (slice->ttpix != None)
 			XFreePixmap(dpy, slice->ttpix);
+		if (slice->ttpict != None)
+			XRenderFreePicture(dpy, slice->ttpict);
 		if (tmp->file != NULL)
 			free(tmp->file);
 		if (tmp->icon != NULL) {
