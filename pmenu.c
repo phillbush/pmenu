@@ -1677,6 +1677,7 @@ cleanpictures(void)
 static void
 cleandc(void)
 {
+	ctrlfnt_free(dc.fontset);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorBG]);
 	XftColorFree(dpy, visual, colormap, &dc.normal[ColorFG]);
 	XftColorFree(dpy, visual, colormap, &dc.selected[ColorBG]);
@@ -1765,6 +1766,7 @@ main(int argc, char *argv[])
 	cleanpictures();
 	cleandc();
 	XCloseDisplay(dpy);
+	ctrlfnt_term();
 
 	return 0;
 }
