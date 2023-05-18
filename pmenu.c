@@ -1298,7 +1298,7 @@ drawtooltip(struct Slice *slice)
 		pie.fg,
 		(XRectangle){
 			.x = TTPAD,
-			.y = pie.tooltiph / 2,
+			.y = TTPAD,
 			.width = slice->ttw,
 			.height = dc.fonth,
 		},
