@@ -824,7 +824,7 @@ setslices(struct Menu *menu)
 
 		/* get position of slice's label */
 		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
-		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a));
+		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a)) - (dc.fonth / 2);
 
 		/* get position of submenu */
 		slice->x = pie.radius + (pie.diameter * (cos(a) * 0.9));
