@@ -40,6 +40,11 @@
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
 
+#define ATOMS                                   \
+	X(NET_WM_WINDOW_TYPE)                   \
+	X(NET_WM_WINDOW_TYPE_TOOLTIP)           \
+	X(NET_WM_WINDOW_TYPE_POPUP_MENU)
+
 #define RESOURCES                                                       \
 	X(BORDER_CLR,   "BorderColor",          "borderColor")          \
 	X(BORDER_WID,   "BorderWidth",          "borderWidth")          \
@@ -54,11 +59,16 @@
 	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor")    \
 	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor")
 
+#define DEF_BORDER 2
+#define DEF_DIAMETER 200
 #define DEF_COLOR_BG     (XRenderColor){ .red = 0x3100, .green = 0x3100, .blue = 0x3100, .alpha = 0xFFFF }
 #define DEF_COLOR_FG     (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
 #define DEF_COLOR_SELBG  (XRenderColor){ .red = 0x3400, .green = 0x6500, .blue = 0xA400, .alpha = 0xFFFF }
 #define DEF_COLOR_SELFG  (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
 #define DEF_COLOR_BORDER (XRenderColor){ .red = 0x3100, .green = 0x3100, .blue = 0x3100, .alpha = 0xFFFF }
+
+#define SEPARATOR_BEG 0.14
+#define SEPARATOR_END 0.37
 
 enum {
 	SCHEME_NORMAL,
@@ -77,6 +87,13 @@ enum {
 	COLOR_LAST = 2,
 };
 
+enum {
+	TRIANGLE_WIDTH = 3,
+	TRIANGLE_HEIGHT = 7,
+	TRIANGLE_DISTANCE = 6,
+	TTBORDER = 1,
+};
+
 enum Resource {
 #define X(res, s1, s2) res,
 	RESOURCES
@@ -84,16 +101,15 @@ enum Resource {
 #undef  X
 };
 
+enum Atoms {
+#define X(atom) atom,
+	ATOMS
+	NATOMS
+#undef  X
+};
+
 /* state of command to popen */
 enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
-
-/* atoms */
-enum {
-	NET_WM_WINDOW_TYPE,
-	NET_WM_WINDOW_TYPE_TOOLTIP,
-	NET_WM_WINDOW_TYPE_POPUP_MENU,
-	ATOM_LAST
-};
 
 /* configuration structure */
 struct Config {
@@ -186,8 +202,7 @@ struct Pie {
 	Window dummy;
 
 	GC gc;              /* graphic context of the bitmaps */
-	Drawable clip;      /* bitmap shaping the clip region (without borders) */
-	Drawable bounding;  /* bitmap shaping the bounding region (with borders)*/
+	Drawable clip;
 
 	struct {
 		XrmClass class;
@@ -218,13 +233,14 @@ static XRenderPictFormat *xformat, *alphaformat;
 static int screen;
 static int depth;
 static struct DC dc;
-static Atom atoms[ATOM_LAST];
+static Atom atoms[NATOMS];
 static XClassHint classh;
 
 /* The pie bitmap structure */
 static struct Pie pie;
 
 /* flags */
+static int execcommand = 0;
 static int rootmodeflag = 0;            /* wheter to run in root mode */
 static int nowarpflag = 0;              /* whether to disable pointer warping */
 static int passclickflag = 0;           /* whether to pass click to root window */
@@ -237,8 +253,6 @@ static unsigned int modifier = 0;       /* modifier to trigger pmenu */
 static char *iconstring = NULL;         /* string read from getenv */
 static char *iconpaths[MAXPATHS];       /* paths to icon directories */
 static int niconpaths = 0;              /* number of paths to icon directories */
-
-#include "config.h"
 
 static void
 usage(void)
@@ -360,8 +374,9 @@ parseiconpaths(char *s)
 static void
 getoptions(int argc, char **argv)
 {
+	double l;
 	int ch;
-	char *s, *t;
+	char *endp, *s, *t;
 
 	classh.res_class = CLASS;
 	classh.res_name = argv[0];
@@ -371,10 +386,12 @@ getoptions(int argc, char **argv)
 	while ((ch = getopt(argc, argv, "d:ewx:X:P:r:m:p")) != -1) {
 		switch (ch) {
 		case 'd':
-			config.diameter_pixels = strtoul(optarg, NULL, 10);
+			l = strtol(optarg, &endp, 10);
+			if (optarg[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
+				pie.diameter = l;
 			break;
 		case 'e':
-			config.execcommand = !config.execcommand;
+			execcommand = !execcommand;
 			break;
 		case 'w':
 			nowarpflag = 1;
@@ -419,33 +436,30 @@ getoptions(int argc, char **argv)
 }
 
 /* setup pie */
-static void
+static int
 initpie(void)
 {
 	XGCValues values;
 	unsigned long valuemask;
 
 	/* set pie geometry */
-	pie.border = 0;
-	pie.diameter = config.diameter_pixels;
 	pie.radius = (pie.diameter + 1) / 2;
 	pie.fulldiameter = pie.diameter + (pie.border * 2);
 	pie.tooltiph = dc.fonth + 2 * TTPAD;
 
 	/* set the geometry of the triangle for submenus */
-	pie.triangleouter = pie.radius - config.triangle_distance;
-	pie.triangleinner = pie.radius - config.triangle_distance - config.triangle_width;
-	pie.triangleangle = ((double)config.triangle_height / 2.0) / (double)pie.triangleinner;
+	pie.triangleouter = pie.radius - TRIANGLE_DISTANCE;
+	pie.triangleinner = pie.radius - TRIANGLE_DISTANCE - TRIANGLE_WIDTH;
+	pie.triangleangle = ((double)TRIANGLE_HEIGHT / 2.0) / (double)pie.triangleinner;
 
 	/* set the separator beginning and end */
-	pie.separatorbeg = pie.radius * config.separatorbeg;
-	pie.separatorend = pie.radius * config.separatorend;
-	pie.innerangle = atan(config.separator_pixels / (2.0 * pie.separatorbeg));
-	pie.outerangle = atan(config.separator_pixels / (2.0 * pie.separatorend));
+	pie.separatorbeg = pie.radius * SEPARATOR_BEG;
+	pie.separatorend = pie.radius * SEPARATOR_END;
+	pie.innerangle = atan(1.0 / (2.0 * pie.separatorbeg));
+	pie.outerangle = atan(1.0 / (2.0 * pie.separatorend));
 
 	/* Create a simple bitmap mask (depth = 1) */
-	pie.clip = XCreatePixmap(display, pie.dummy, pie.diameter, pie.diameter, 1);
-	pie.bounding = XCreatePixmap(display, pie.dummy, pie.fulldiameter, pie.fulldiameter, 1);
+	pie.clip = XCreatePixmap(display, pie.dummy, pie.fulldiameter, pie.fulldiameter, 1);
 
 	/* Create the mask GC */
 	values.background = 1;
@@ -455,28 +469,13 @@ initpie(void)
 
 	/* clear the bitmap */
 	XSetForeground(display, pie.gc, 0);
-	XFillRectangle(display, pie.clip, pie.gc, 0, 0, pie.diameter, pie.diameter);
-	XFillRectangle(display, pie.bounding, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
+	XFillRectangle(display, pie.clip, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
 
 	/* create round shape */
 	XSetForeground(display, pie.gc, 1);
 	XFillArc(display, pie.clip, pie.gc, 0, 0,
-	         pie.diameter, pie.diameter, 0, 360*64);
-	XFillArc(display, pie.bounding, pie.gc, 0, 0,
 	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
-}
-
-/* intern atoms */
-static void
-initatoms(void)
-{
-	char *atomnames[ATOM_LAST] = {
-		[NET_WM_WINDOW_TYPE] = "_NET_WM_WINDOW_TYPE",
-		[NET_WM_WINDOW_TYPE_TOOLTIP] = "_NET_WM_WINDOW_TYPE_TOOLTIP",
-		[NET_WM_WINDOW_TYPE_POPUP_MENU] = "_NET_WM_WINDOW_TYPE_POPUP_MENU",
-	};
-
-	XInternAtoms(display, atomnames, ATOM_LAST, False, atoms);
+	return RETURN_SUCCESS;
 }
 
 /* call malloc checking for error */
@@ -528,8 +527,8 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 
 	/* create menu window */
 	menu->win = createwindow(
-		pie.diameter, pie.diameter,
-		ExposureMask | KeyPressMask | ButtonPressMask |
+		pie.fulldiameter, pie.fulldiameter,
+		KeyPressMask | ButtonPressMask |
 		ButtonReleaseMask | PointerMotionMask | LeaveWindowMask
 	);
 
@@ -538,12 +537,12 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	                PropModeReplace, (unsigned char *)&atoms[NET_WM_WINDOW_TYPE_POPUP_MENU], 1);
 
 	XShapeCombineMask(display, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
-	XShapeCombineMask(display, menu->win, ShapeBounding, -pie.border, -pie.border, pie.bounding, ShapeSet);
+	XShapeCombineMask(display, menu->win, ShapeBounding, 0, 0, pie.clip, ShapeSet);
 
 	/* set window manager hints */
 	sizeh.flags = USPosition | PMaxSize | PMinSize;
-	sizeh.min_width = sizeh.max_width = pie.diameter;
-	sizeh.min_height = sizeh.max_height = pie.diameter;
+	sizeh.min_width = sizeh.max_width = pie.fulldiameter;
+	sizeh.min_height = sizeh.max_height = pie.fulldiameter;
 	XSetWMProperties(display, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
 
 	/* set menu variables */
@@ -557,7 +556,7 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	menu->level = level;
 
 	/* create pixmap and picture */
-	menu->pixmap = XCreatePixmap(display, menu->win, pie.diameter, pie.diameter, depth);
+	menu->pixmap = XCreatePixmap(display, menu->win, pie.fulldiameter, pie.fulldiameter, depth);
 	menu->picture = XRenderCreatePicture(display, menu->pixmap, xformat, 0, NULL);
 	menu->drawn = 0;
 
@@ -772,6 +771,7 @@ setslices(struct Menu *menu)
 	double a = 0.0;
 	unsigned n = 0;
 	int textwidth;
+	int w, h;
 
 	menu->half = M_PI / menu->nslices;
 	for (slice = menu->list; slice; slice = slice->next) {
@@ -818,7 +818,7 @@ setslices(struct Menu *menu)
 		}
 
 		/* create pixmap */
-		slice->pixmap = XCreatePixmap(display, menu->win, pie.diameter, pie.diameter, depth);
+		slice->pixmap = XCreatePixmap(display, menu->win, pie.fulldiameter, pie.fulldiameter, depth);
 		slice->picture = XRenderCreatePicture(display, slice->pixmap, xformat, 0, NULL);
 		slice->drawn = 0;
 
@@ -827,8 +827,10 @@ setslices(struct Menu *menu)
 		if (textwidth > 0) {
 			slice->ttw = textwidth + 2 * TTPAD;
 
-			slice->tooltip = createwindow(slice->ttw, pie.tooltiph, ExposureMask);
-			slice->ttpix = XCreatePixmap(display, slice->tooltip, slice->ttw, pie.tooltiph, depth);
+			w = slice->ttw + TTBORDER * 2;
+			h = pie.tooltiph + TTBORDER * 2;
+			slice->tooltip = createwindow(w, h, 0);
+			slice->ttpix = XCreatePixmap(display, slice->tooltip, w, h, depth);
 			slice->ttpict = XRenderCreatePicture(display, slice->ttpix, xformat, 0, NULL);
 			XChangeProperty(display, slice->tooltip, atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
 			                PropModeReplace, (unsigned char *)&atoms[NET_WM_WINDOW_TYPE_TOOLTIP], 1);
@@ -987,6 +989,8 @@ getslice(struct Menu *menu, int x, int y)
 	if (menu == NULL)
 		return NULL;
 
+	x += pie.border;
+	y += pie.border;
 	x -= pie.radius;
 	y -= pie.radius;
 	y = -y;
@@ -1098,7 +1102,7 @@ unmapmenu(struct Menu *currmenu)
 
 /* draw background of selected slice */
 static void
-drawslice(struct Menu *menu, struct Slice *slice)
+drawslice(Picture picture, Picture color, int nslices, int slicen, int separatorbeg)
 {
 	XPointDouble *p;
 	int i, outer, inner, npoints;
@@ -1106,35 +1110,35 @@ drawslice(struct Menu *menu, struct Slice *slice)
 
 	/* determine number of segments to draw */
 	h = hypot(pie.radius, pie.radius)/2;
-	outer = ((2 * M_PI) / (menu->nslices * acos(h/(h+1.0)))) + 0.5;
+	outer = ((2 * M_PI) / (nslices * acos(h/(h+1.0)))) + 0.5;
 	outer = (outer < 3) ? 3 : outer;
-	h = hypot(pie.separatorbeg, pie.separatorbeg)/2;
-	inner = ((2 * M_PI) / (menu->nslices * acos(h/(h+1.0)))) + 0.5;
+	h = hypot(separatorbeg, separatorbeg)/2;
+	inner = ((2 * M_PI) / (nslices * acos(h/(h+1.0)))) + 0.5;
 	inner = (inner < 3) ? 3 : inner;
 	npoints = inner + outer + 2;
 	p = emalloc(npoints * sizeof *p);
 
-	b = ((2 * M_PI) / menu->nslices) * slice->slicen;
+	b = ((2 * M_PI) / nslices) * slicen;
 
 	/* outer points */
-	a = ((2 * M_PI) / (menu->nslices * outer));
+	a = ((2 * M_PI) / (nslices * outer));
 	for (i = 0; i <= outer; i++) {
-		p[i].x = pie.radius + (pie.radius + 1) * cos((i - (outer / 2.0)) * a - b);
-		p[i].y = pie.radius + (pie.radius + 1) * sin((i - (outer / 2.0)) * a - b);
+		p[i].x = (pie.radius + pie.border + 1) * (1.0 + cos((i - (outer / 2.0)) * a - b));
+		p[i].y = (pie.radius + pie.border + 1) * (1.0 + sin((i - (outer / 2.0)) * a - b));
 	}
 
 	/* inner points */
-	a = ((2 * M_PI) / (menu->nslices * inner));
+	a = ((2 * M_PI) / (nslices * inner));
 	for (i = 0; i <= inner; i++) {
-		p[i + outer + 1].x = pie.radius + pie.separatorbeg * cos(((inner - i) - (inner / 2.0)) * a - b);
-		p[i + outer + 1].y = pie.radius + pie.separatorbeg * sin(((inner - i) - (inner / 2.0)) * a - b);
+		p[i + outer + 1].x = pie.border + pie.radius + separatorbeg * cos(((inner - i) - (inner / 2.0)) * a - b);
+		p[i + outer + 1].y = pie.border + pie.radius + separatorbeg * sin(((inner - i) - (inner / 2.0)) * a - b);
 	}
 	
 	XRenderCompositeDoublePoly(
 		display,
 		PictOpOver,
-		dc.colors[SCHEME_SELECT][COLOR_BG].pict,
-		slice->picture,
+		color,
+		picture,
 		alphaformat,
 		0, 0, 0, 0, p, npoints, 0
 	);
@@ -1149,14 +1153,14 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	double a;
 
 	a = -((M_PI + 2 * M_PI * slice->slicen) / menu->nslices);
-	p[0].x = pie.radius + pie.separatorbeg * cos(a - pie.innerangle);
-	p[0].y = pie.radius + pie.separatorbeg * sin(a - pie.innerangle);
-	p[1].x = pie.radius + pie.separatorbeg * cos(a + pie.innerangle);
-	p[1].y = pie.radius + pie.separatorbeg * sin(a + pie.innerangle);
-	p[2].x = pie.radius + pie.separatorend * cos(a + pie.outerangle);
-	p[2].y = pie.radius + pie.separatorend * sin(a + pie.outerangle);
-	p[3].x = pie.radius + pie.separatorend * cos(a - pie.outerangle);
-	p[3].y = pie.radius + pie.separatorend * sin(a - pie.outerangle);
+	p[0].x = pie.border + pie.radius + pie.separatorbeg * cos(a - pie.innerangle);
+	p[0].y = pie.border + pie.radius + pie.separatorbeg * sin(a - pie.innerangle);
+	p[1].x = pie.border + pie.radius + pie.separatorbeg * cos(a + pie.innerangle);
+	p[1].y = pie.border + pie.radius + pie.separatorbeg * sin(a + pie.innerangle);
+	p[2].x = pie.border + pie.radius + pie.separatorend * cos(a + pie.outerangle);
+	p[2].y = pie.border + pie.radius + pie.separatorend * sin(a + pie.outerangle);
+	p[3].x = pie.border + pie.radius + pie.separatorend * cos(a - pie.outerangle);
+	p[3].y = pie.border + pie.radius + pie.separatorend * sin(a - pie.outerangle);
 	XRenderCompositeDoublePoly(
 		display,
 		PictOpOver,
@@ -1175,12 +1179,12 @@ drawtriangle(Picture source, Picture picture, struct Menu *menu, struct Slice *s
 	double a;
 
 	a = - (((2 * M_PI) / menu->nslices) * slice->slicen);
-	p[0].x = pie.radius + pie.triangleinner * cos(a - pie.triangleangle);
-	p[0].y = pie.radius + pie.triangleinner * sin(a - pie.triangleangle);
-	p[1].x = pie.radius + pie.triangleouter * cos(a);
-	p[1].y = pie.radius + pie.triangleouter * sin(a);
-	p[2].x = pie.radius + pie.triangleinner * cos(a + pie.triangleangle);
-	p[2].y = pie.radius + pie.triangleinner * sin(a + pie.triangleangle);
+	p[0].x = pie.border + pie.radius + pie.triangleinner * cos(a - pie.triangleangle);
+	p[0].y = pie.border + pie.radius + pie.triangleinner * sin(a - pie.triangleangle);
+	p[1].x = pie.border + pie.radius + pie.triangleouter * cos(a);
+	p[1].y = pie.border + pie.radius + pie.triangleouter * sin(a);
+	p[2].x = pie.border + pie.radius + pie.triangleinner * cos(a + pie.triangleangle);
+	p[2].y = pie.border + pie.radius + pie.triangleinner * sin(a + pie.triangleangle);
 	XRenderCompositeDoublePoly(
 		display,
 		PictOpOver,
@@ -1220,11 +1224,18 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		picture,
 		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
 		0, 0,
-		pie.diameter,
-		pie.diameter
+		pie.fulldiameter,
+		pie.fulldiameter
 	);
-	if (selected)
-		drawslice(menu, selected);
+	if (selected != NULL) {
+		drawslice(
+			selected->picture,
+			dc.colors[SCHEME_SELECT][COLOR_BG].pict,
+			menu->nslices,
+			selected->slicen,
+			pie.separatorbeg
+		);
+	}
 
 	/* draw slice foreground */
 	for (slice = menu->list; slice; slice = slice->next) {
@@ -1262,6 +1273,43 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			drawtriangle(source, picture, menu, slice);
 		}
 	}
+
+	/*
+	 * Here, we draw 4 fake slices around the pie menu.
+	 * Those are the shadows.
+	 */
+
+	/* top shadow */
+	drawslice(
+		picture,
+		dc.colors[SCHEME_BORDER][COLOR_TOP].pict,
+		4,
+		1,
+		pie.radius
+	);
+	drawslice(
+		picture,
+		dc.colors[SCHEME_BORDER][COLOR_TOP].pict,
+		4,
+		2,
+		pie.radius
+	);
+
+	/* bottom shadow */
+	drawslice(
+		picture,
+		dc.colors[SCHEME_BORDER][COLOR_BOT].pict,
+		4,
+		3,
+		pie.radius
+	);
+	drawslice(
+		picture,
+		dc.colors[SCHEME_BORDER][COLOR_BOT].pict,
+		4,
+		0,
+		pie.radius
+	);
 }
 
 /* draw tooltip of slice */
@@ -1273,8 +1321,17 @@ drawtooltip(struct Slice *slice)
 		display,
 		PictOpSrc,
 		slice->ttpict,
-		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
+		&dc.colors[SCHEME_NORMAL][COLOR_FG].chans,
 		0, 0,
+		slice->ttw + TTBORDER * 2,
+		pie.tooltiph + TTBORDER * 2
+	);
+	XRenderFillRectangle(
+		display,
+		PictOpSrc,
+		slice->ttpict,
+		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
+		TTBORDER, TTBORDER,
 		slice->ttw,
 		pie.tooltiph
 	);
@@ -1283,14 +1340,16 @@ drawtooltip(struct Slice *slice)
 		slice->ttpict,
 		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
 		(XRectangle){
-			.x = TTPAD,
-			.y = TTPAD,
+			.x = TTPAD + TTBORDER,
+			.y = TTPAD + TTBORDER,
 			.width = slice->ttw,
 			.height = dc.fonth,
 		},
 		slice->label,
 		strlen(slice->label)
 	);
+	XSetWindowBackgroundPixmap(display, slice->tooltip, slice->ttpix);
+	XClearWindow(display, slice->tooltip);
 	slice->ttdrawn = 1;
 }
 
@@ -1311,19 +1370,9 @@ copymenu(struct Menu *currmenu)
 			if (!menu->drawn)
 				drawmenu(menu, NULL);
 		}
-		XCopyArea(display, pixmap, menu->win, dc.gc, 0, 0, pie.diameter, pie.diameter, 0, 0);
+		XSetWindowBackgroundPixmap(display, menu->win, pixmap);
+		XClearWindow(display, menu->win);
 	}
-}
-
-/* draw slice's tooltip */
-static void
-copytooltip(struct Slice *slice)
-{
-	if (slice->icon == NULL || slice->label == NULL)
-		return;
-	if (!slice->ttdrawn)
-		drawtooltip(slice);
-	XCopyArea(display, slice->ttpix, slice->tooltip, dc.gc, 0, 0, slice->ttw, pie.tooltiph, 0, 0);
 }
 
 /* cycle through the slices; non-zero direction is next, zero is prev */
@@ -1452,15 +1501,6 @@ tooltip(struct Menu *currmenu, XEvent *ev)
 
 	while (!XNextEvent(display, ev)) {
 		switch (ev->type) {
-		case Expose:
-			if (ev->xexpose.count == 0) {
-				if (ev->xexpose.window == currmenu->selected->tooltip) {
-					copytooltip(currmenu->selected);
-				} else if (ev->xexpose.window == currmenu->win) {
-					copymenu(currmenu);
-				}
-			}
-			break;
 		case MotionNotify:
 			menu = getmenu(currmenu, ev->xmotion.window);
 			slice = getslice(menu, ev->xmotion.x, ev->xmotion.y);
@@ -1483,7 +1523,7 @@ tooltip(struct Menu *currmenu, XEvent *ev)
 static void
 enteritem(struct Slice *slice)
 {
-	if (config.execcommand) {
+	if (execcommand) {
 		if (efork() == 0) {
 			if (efork() == 0) {
 				eexecsh(slice->output);
@@ -1518,6 +1558,8 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 	prevmenu = currmenu = rootmenu;
 	while (XPending(display) || (nready = poll(pfd, 1, timeout)) != -1) {
 		if (nready == 0 && currmenu != NULL && currmenu->selected != NULL) {
+			if (!currmenu->selected->ttdrawn)
+				drawtooltip(currmenu->selected);
 			maptooltip(mon, currmenu->selected, ttx, tty);
 			tooltip(currmenu, &ev);
 			unmaptooltip(currmenu->selected);
@@ -1525,10 +1567,6 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 			XNextEvent(display, &ev);
 		}
 		switch (ev.type) {
-		case Expose:
-			if (currmenu != NULL && ev.xexpose.count == 0)
-				copymenu(currmenu);
-			break;
 		case MotionNotify:
 			timeout = -1;
 			menu = getmenu(currmenu, ev.xmotion.window);
@@ -1765,6 +1803,8 @@ loadresources(const char *str)
 		return;
 	if ((xdb = loadxdb(str)) == NULL)
 		return;
+	pie.border = DEF_BORDER;
+	pie.diameter = DEF_DIAMETER;
 	for (resource = 0; resource < NRESOURCES; resource++) {
 		value = getresource(xdb, resource);
 		if (value == NULL)
@@ -1826,11 +1866,21 @@ loadresources(const char *str)
 static int
 initxconn(void)
 {
+	static char *atomnames[NATOMS] = {
+#define X(atom) [atom] = #atom,
+		ATOMS
+#undef X
+	};
+
 	ctrlfnt_init();
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
 		warnx("could not set locale");
 	if ((display = XOpenDisplay(NULL)) == NULL) {
 		warnx("could not connect to X server");
+		return RETURN_FAILURE;
+	}
+	if (!XInternAtoms(display, atomnames, NATOMS, False, atoms)) {
+		warnx("could not intern X atoms");
 		return RETURN_FAILURE;
 	}
 	screen = DefaultScreen(display);
@@ -1963,7 +2013,7 @@ inittheme(void)
 
 	/* create common GC */
 	values.arc_mode = ArcPieSlice;
-	values.line_width = config.separator_pixels;
+	values.line_width = 1;
 	valuemask = GCLineWidth | GCArcMode;
 	dc.gc = XCreateGC(display, pie.dummy, valuemask, &values);
 	return RETURN_SUCCESS;
@@ -1977,6 +2027,7 @@ main(int argc, char *argv[])
 		initvisual,
 		initresources,
 		inittheme,
+		initpie,
 	};
 	struct pollfd pfd;
 	struct Menu *rootmenu = NULL;
@@ -1985,12 +2036,12 @@ main(int argc, char *argv[])
 	size_t i;
 	int exitval = EXIT_FAILURE;
 
+	/* get configuration */
+	getoptions(argc, argv);
+
 	for (i = 0; i < LEN(initsteps); i++)
 		if ((*initsteps[i])() == RETURN_FAILURE)
 			goto error;
-
-	/* get configuration */
-	getoptions(argc, argv);
 
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
@@ -1998,10 +2049,6 @@ main(int argc, char *argv[])
 	imlib_context_set_display(display);
 	imlib_context_set_visual(visual);
 	imlib_context_set_colormap(colormap);
-
-	/* initializers */
-	initpie();
-	initatoms();
 
 	/* if running in root mode, get button presses from root window */
 	if (rootmodeflag)
