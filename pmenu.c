@@ -41,6 +41,8 @@
 	X(NET_WM_WINDOW_TYPE_POPUP_MENU)
 
 #define RESOURCES                                                       \
+	X(_SELECT_BG,   "Selbackground",        "selbackground")        \
+	X(_SELECT_FG,   "Selforeground",        "selforeground")        \
 	X(BORDER_CLR,   "BorderColor",          "borderColor")          \
 	X(BORDER_WID,   "BorderWidth",          "borderWidth")          \
 	X(DIAMETER,     "DiameterWidth",        "diameterWidth")        \
@@ -1831,9 +1833,11 @@ loadresources(const char *str)
 			setcolor(SCHEME_NORMAL, COLOR_FG, value);
 			break;
 		case SELECT_BG:
+		case _SELECT_BG:
 			setcolor(SCHEME_SELECT, COLOR_BG, value);
 			break;
 		case SELECT_FG:
+		case _SELECT_FG:
 			setcolor(SCHEME_SELECT, COLOR_FG, value);
 			break;
 		default:
