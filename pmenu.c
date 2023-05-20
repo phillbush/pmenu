@@ -314,6 +314,8 @@ setmodifier(char *s)
 {
 	size_t len;
 
+	if (strncasecmp(s, "Mod", 3) == 0)
+		s += 3;
 	if ((len = strlen(s)) < 1)
 		return;
 	switch (s[0]) {
