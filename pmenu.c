@@ -204,6 +204,8 @@ struct Pie {
 	GC gc;              /* graphic context of the bitmaps */
 	Drawable clip;
 
+	Picture gradient;
+
 	struct {
 		XrmClass class;
 		XrmName name;
@@ -237,7 +239,7 @@ static Atom atoms[NATOMS];
 static XClassHint classh;
 
 /* The pie bitmap structure */
-static struct Pie pie;
+static struct Pie pie = { 0 };
 
 /* flags */
 static int execcommand = 0;
@@ -443,8 +445,6 @@ initpie(void)
 	unsigned long valuemask;
 
 	/* set pie geometry */
-	pie.radius = (pie.diameter + 1) / 2;
-	pie.fulldiameter = pie.diameter + (pie.border * 2);
 	pie.tooltiph = dc.fonth + 2 * TTPAD;
 
 	/* set the geometry of the triangle for submenus */
@@ -1123,8 +1123,8 @@ drawslice(Picture picture, Picture color, int nslices, int slicen, int separator
 	/* outer points */
 	a = ((2 * M_PI) / (nslices * outer));
 	for (i = 0; i <= outer; i++) {
-		p[i].x = (pie.radius + pie.border + 1) * (1.0 + cos((i - (outer / 2.0)) * a - b));
-		p[i].y = (pie.radius + pie.border + 1) * (1.0 + sin((i - (outer / 2.0)) * a - b));
+		p[i].x = pie.border + pie.radius + pie.radius * cos((i - (outer / 2.0)) * a - b);
+		p[i].y = pie.border + pie.radius + pie.radius * sin((i - (outer / 2.0)) * a - b);
 	}
 
 	/* inner points */
@@ -1164,7 +1164,7 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	XRenderCompositeDoublePoly(
 		display,
 		PictOpOver,
-		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
+		pie.gradient,
 		picture,
 		alphaformat,
 		0, 0, 0, 0, p, 4, 0
@@ -1217,19 +1217,28 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		menu->drawn = 1;
 	}
 
-	/* draw background */
-	XRenderFillRectangle(
+	XRenderComposite(
 		display,
 		PictOpSrc,
+		pie.gradient,
+		None,
 		picture,
-		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
+		0, 0,
+		0, 0,
 		0, 0,
 		pie.fulldiameter,
 		pie.fulldiameter
 	);
+	drawslice(
+		picture,
+		dc.colors[SCHEME_NORMAL][COLOR_BG].pict,
+		1,
+		0,
+		0
+	);
 	if (selected != NULL) {
 		drawslice(
-			selected->picture,
+			picture,
 			dc.colors[SCHEME_SELECT][COLOR_BG].pict,
 			menu->nslices,
 			selected->slicen,
@@ -1273,43 +1282,6 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			drawtriangle(source, picture, menu, slice);
 		}
 	}
-
-	/*
-	 * Here, we draw 4 fake slices around the pie menu.
-	 * Those are the shadows.
-	 */
-
-	/* top shadow */
-	drawslice(
-		picture,
-		dc.colors[SCHEME_BORDER][COLOR_TOP].pict,
-		4,
-		1,
-		pie.radius
-	);
-	drawslice(
-		picture,
-		dc.colors[SCHEME_BORDER][COLOR_TOP].pict,
-		4,
-		2,
-		pie.radius
-	);
-
-	/* bottom shadow */
-	drawslice(
-		picture,
-		dc.colors[SCHEME_BORDER][COLOR_BOT].pict,
-		4,
-		3,
-		pie.radius
-	);
-	drawslice(
-		picture,
-		dc.colors[SCHEME_BORDER][COLOR_BOT].pict,
-		4,
-		0,
-		pie.radius
-	);
 }
 
 /* draw tooltip of slice */
@@ -1709,6 +1681,9 @@ cleandc(void)
 			}
 		}
 	}
+	XFreePixmap(display, pie.clip);
+	XDestroyWindow(display, pie.dummy);
+	XRenderFreePicture(display, pie.gradient);
 	XFreeGC(display, dc.gc);
 }
 
@@ -1789,13 +1764,14 @@ loadxdb(const char *str)
 static void
 loadresources(const char *str)
 {
+
 	XrmDatabase xdb;
 	char *value;
 	enum Resource resource;
 	char *endp;
 	char *fontname = NULL;
 	long l;
-	double d;
+	double d, d0, d1;
 	double fontsize = 0.0;
 	int changefont = FALSE;
 
@@ -1858,8 +1834,52 @@ loadresources(const char *str)
 			break;
 		}
 	}
+
+	pie.radius = (pie.diameter + 1) / 2;
+	pie.fulldiameter = pie.diameter + (pie.border * 2);
+
 	if (changefont)
 		setfont(fontname, fontsize);
+
+	/* create gradient picture */
+	if (pie.gradient != None)
+		XRenderFreePicture(display, pie.gradient);
+	d = pie.fulldiameter * pie.fulldiameter * 2;
+	d = sqrt(d);
+	d0 = d - pie.fulldiameter;
+	d0 /= 2;
+	d0 /= d;
+	d1 = d - pie.fulldiameter;
+	d1 /= 2;
+	d1 += pie.fulldiameter;
+	d1 /= d;
+	pie.gradient = XRenderCreateLinearGradient(
+		display,
+		&(XLinearGradient){
+			.p1 = (XPointFixed){
+				.x = XDoubleToFixed(0.0),
+				.y = XDoubleToFixed(0.0),
+			},
+			.p2 = (XPointFixed){
+				.x = XDoubleToFixed((double)pie.fulldiameter),
+				.y = XDoubleToFixed((double)pie.fulldiameter),
+			},
+		},
+		(XFixed[]){
+			[0] = XDoubleToFixed(0.0),
+			[1] = XDoubleToFixed(d0),
+			[2] = XDoubleToFixed(d1),
+			[3] = XDoubleToFixed(1.0),
+		},
+		(XRenderColor[]){
+			[0] = dc.colors[SCHEME_BORDER][COLOR_TOP].chans,
+			[1] = dc.colors[SCHEME_BORDER][COLOR_TOP].chans,
+			[2] = dc.colors[SCHEME_BORDER][COLOR_BOT].chans,
+			[3] = dc.colors[SCHEME_BORDER][COLOR_BOT].chans,
+		},
+		4
+	);
+
 	XrmDestroyDatabase(xdb);
 }
 
