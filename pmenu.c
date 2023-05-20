@@ -1164,7 +1164,7 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	XRenderCompositeDoublePoly(
 		display,
 		PictOpOver,
-		pie.gradient,
+		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
 		picture,
 		alphaformat,
 		0, 0, 0, 0, p, 4, 0
