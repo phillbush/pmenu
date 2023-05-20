@@ -61,7 +61,7 @@
 
 #define DEF_BORDER 2
 #define DEF_DIAMETER 200
-#define DEF_COLOR_BG     (XRenderColor){ .red = 0x3100, .green = 0x3100, .blue = 0x3100, .alpha = 0xFFFF }
+#define DEF_COLOR_BG     (XRenderColor){ .red = 0x0000, .green = 0x0000, .blue = 0x0000, .alpha = 0xFFFF }
 #define DEF_COLOR_FG     (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
 #define DEF_COLOR_SELBG  (XRenderColor){ .red = 0x3400, .green = 0x6500, .blue = 0xA400, .alpha = 0xFFFF }
 #define DEF_COLOR_SELFG  (XRenderColor){ .red = 0xFFFF, .green = 0xFFFF, .blue = 0xFFFF, .alpha = 0xFFFF }
@@ -953,14 +953,14 @@ placemenu(struct Monitor *mon, struct Menu *menu)
 	}
 	menu->x = mon->x;
 	menu->y = mon->y;
-	if (x - mon->x >= pie.radius) {
-		if (mon->x + mon->w - x >= pie.radius)
+	if (x - mon->x >= pie.radius + pie.border) {
+		if (mon->x + mon->w - x >= pie.radius + pie.border)
 			menu->x = x - pie.radius - pie.border;
 		else if (mon->x + mon->w >= pie.fulldiameter)
 			menu->x = mon->x + mon->w - pie.fulldiameter;
 	}
-	if (y - mon->y >= pie.radius) {
-		if (mon->y + mon->h - y >= pie.radius)
+	if (y - mon->y >= pie.radius + pie.border) {
+		if (mon->y + mon->h - y >= pie.radius + pie.border)
 			menu->y = y - pie.radius - pie.border;
 		else if (mon->y + mon->h >= pie.fulldiameter)
 			menu->y = mon->y + mon->h - pie.fulldiameter;
@@ -999,10 +999,8 @@ getslice(struct Menu *menu, int x, int y)
 	if (menu == NULL)
 		return NULL;
 
-	x += pie.border;
-	y += pie.border;
-	x -= pie.radius;
-	y -= pie.radius;
+	x -= pie.border + pie.radius;
+	y -= pie.border + pie.radius;
 	y = -y;
 
 	/* if the cursor is in the middle circle, it is in no slice */
@@ -1520,6 +1518,19 @@ enteritem(struct Slice *slice)
 	}
 }
 
+static void
+warppointer(struct Menu *currmenu)
+{
+	XWarpPointer(
+		display,
+		None,
+		currmenu->win,
+		0, 0, 0, 0,
+		pie.radius + pie.border,
+		pie.radius + pie.border
+	);
+}
+
 /* run event loop */
 static void
 run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
@@ -1595,8 +1606,8 @@ selectslice:
 			prevmenu = mapmenu(currmenu, prevmenu);
 			currmenu->selected = NULL;
 			copymenu(currmenu);
-			if (!nowarpflag)
-				XWarpPointer(display, None, currmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			if (!nowarpflag) 
+				warppointer(currmenu);
 			break;
 		case LeaveNotify:
 			if (!(ev.xcrossing.state & (Button1Mask | Button3Mask)))
@@ -2108,7 +2119,7 @@ main(int argc, char *argv[])
 			grabkeyboard();
 			placemenu(&mon, rootmenu);
 			mapmenu(rootmenu, NULL);
-			XWarpPointer(display, None, rootmenu->win, 0, 0, 0, 0, pie.radius, pie.radius);
+			warppointer(rootmenu);
 			XFlush(display);
 			run(&pfd, &mon, rootmenu);
 		} else {
