@@ -1,188 +1,240 @@
-.TH PMENU 1
-.SH NAME
-pmenu \- pie menu utility for X
-.SH SYNOPSIS
-.B pmenu
-.RB [ \-ew ]
-.RB [ \-d
-.IR diameter]
-[(\fB\-x\fP|\fB\-X\fP) [\fImod\fP-]\fIbutton\fP]
-.SH DESCRIPTION
-.B pmenu
-is a pie menu for X,
-it reads a list of newline-separated items from stdin,
+.Dd May 20, 2023
+.Dt PMENU 1
+.Os
+.Sh NAME
+.Nm pmenu
+.Nd pie menu utility for X
+.Sh SYNOPSIS
+.Nm pmenu
+.Op Fl ew
+.Op Fl d Ar diameter
+.Op Fl N Ar name
+.Op Fl x Ar mod-button
+.Sh DESCRIPTION
+.Nm
+is a pie menu for X11,
+it reads a list of newline-separated items from standard input,
 shows a pie menu for the user to select one of the items,
-and outputs the item selected to stdout.
+and writes the selected item into standard output.
 The pie menu contains one slice for each item.
-.PP
+.Pp
 The options are as follows:
-.TP
-.B \-d
+.Bl -tag -width Ds
+.It Fl d Ar diameter
 Specify the diameter in pixels of the pie menu.
-.B \-e
-Run the output string on shell rather than printing it to stdout.
-.TP
-.B \-w
+.It Fl e
+Run the output string on shell rather than writing it into standard output.
+.It Fl N name
+Specify the
+.Ic res_name
+member of the
+.Xr XClassHint 3
+propperty.
+.Ar name
+is used to retrieve resources.
+If not specified, defaults to the value of the
+.Ev RESOURCES_NAME
+environment variable, or (if tha variable is not set)
+to the name of the command
+.Nm
+was invoked as
+(that is, the
+.Xr basename 3
+of its
+.Ic "argv[0]" ) .
+.It Fl w
 Disable pointer warping when a new submenu spawns.
 This option is useful when using
-.B pmenu
+.Nm
 with a Wacom tablet.
-.TP
-\fB\-x\fP [\fImod\fP-]\fIbutton\fP
+.It Fl x Ar mod-button
 This option requires an argument of the form
-\fImod\fP-\fIbutton\fP or \fIbutton\fP; where
-.I mod
+.Ar mod-button
+or
+.Ar button ;
+where
+.Ar mod
 is
-.B Mod1
+.Ic Mod1
 to
-.BR Mod5 ,
+.Ic Mod5 ,
 or
-.B Alt
+.Ic Alt
 (equivalent to
-.BR Mod1 ),
+.Ic Mod1 ) ,
 or
-.B Super
+.Ic Super
 (equivalent to
-.BR Mod4 );
+.Ic Mod 4 ) ;
 and
-.I button
+.Ar button
 is the number of a mouse button.
 When this option is used,
-.B pmenu
+.Nm
 listens to button presses on the root window,
 and shows the pie menu when the given button is pressed,
-together with the given modifier,
-on the root window.
+together with the given modifier, on the root window.
 For example, invoking
-.B pmenu
+.Nm
 with the option
-.B -x Super-3
+.Fl x Cm Super-3
 makes a menu open when clicking with the third mouse button on the root window,
 or when clicking with the third mouse button together with the Super (Mod4) modifier on any window.
 This option makes
-.B pmenu
-run continuously;
-so it should be used when
-.B pmenu
-is invoked in background on a X startup file (like
-.BR "~/.xinitrc" ).
-.TP
-\fB\-X\fP [\fImod\fP-]\fIbutton\fP
-Just like
-.BR \-x ,
-but also pass the click to the root window
-(for the window manager to use it, for example).
-This option is incompatible with
-.BR \-x .
-.PP
-Each item read from stdin has the following format:
-.IP
-.EX
-ITEM := [TABS] [IMAGE TABS] LABEL [TABS OUTPUT] NEWLINE
-.EE
-.PP
+.Nm
+run continuously; so it should be used when
+.Nm
+is invoked in background on a X11 startup file (like
+.Pa "~/.xinitrc" ) .
+.El
+.Pp
+Each item read from standard input has the following format:
+.Bd -literal -offset indent
+ITEM := [TABS] [IMAGE TAB] LABEL [TAB OUTPUT] NEWLINE
+.Ed
+.Pp
 That means that each item is composed by tabs,
-followed by an image specification, followed by more tabs and a label,
-followed by more tabs and an output, and ended by a newline.
+followed by an image specification,
+fllowed by a tab and a label,
+followed by a tab and an output string,
+and ended by a newline.
 Brackets group optional elements.
-.IP
+.Bl -bullet
+.It
 The initial tabs indicate the menu hierarchy:
-items indented with a tab are shown in a submenu of the preceding item not indented.
+items indented with a tab are shown in a submenu of thepreceding item not indented.
 An item without initial tabs is a top-level item.
-.IP
-The image is a string of the form "IMG:/path/to/image.png".
-It specifies the path to a image file to be shown as icon in the slice.
-If the path does not begin with "/", "./" or "../", the file is searched
-on the paths specified in the
-.B ICONPATH
+.It
+The image is a string of the form
+.Qq Ic "IMG:/path/to/image.png" .
+It specifies the path to an image file to be shown as icon in the slice.
+If thepath does not begin with
+.Qq Pp "/" ,
+.Qq Pp "./" ,
+or
+.Qq Pp "../" ,
+the file is searched on the paths specified in the
+.Ev ICONPATH
 environment variable.
-.IP
+.It
 The label is the string that will be shown as an item in the menu.
-If the item includes a icon, then no label is shown on the menu;
+If the item includes an icon, then no label is shown on the menu;
 however, a tooltip with the label pops up when hovering the icon.
-.IP
-The output is the string that will be output after selecting the item.
-If an item does not have an output, its label is used as its output.
-If the output begins with the $ character, then this string represents a command
-that will be run by
-.B pmenu
-using 
-.IR popen (3)
+.It
+The output string is the string that will be output after selecting the item.
+If an item does not have an output string, its label is used as its output string.
+If the output strings begins with the
+.Qq Ic "$"
+character, then this string represents a command that will be run by
+.Nm
+using
+.Xr popen 3
 and whose output will be used to generate a submenu.
-.IP
-The newline terminates the item specification.
-.SH USAGE
-.B pmenu
-is controlled by the mouse,
-but can also be controlled by the keyboard.
+.It
+The newline terminates the item specification
+.El
+.Sh USAGE
+.Nm
+is controlled by the mouse, but can also be controlled by the keyboard.
 Pie slices can be selected using
-Tab (with and without Shift),
-Enter and Esc.
-.TP
-.BR Tab
+.Ic Tab
+(with and without
+.Ic Shift ) ,
+.Ic Enter
+and
+.Ic Esc .
+.Bl -tag -width Ds
+.Ic Tab
 Cycle through the slices in the clockwise direction.
-.TP
-.BR Shift-Tab
-Cycle through the items in the anticlockwise direction.
-.TP
-.BR Enter
+.Ic Shift-Tab
+Cycle through the slices in the counterclockwise direction.
+.Ic Enter
 Select the highlighted item.
-.TP
-.B Esc
-Go to the menu above or exit pmenu.
-.SH RESOURCES
-.B
-pmenu
+.Ic Esc
+Close a menu.
+.El
+.Sh RESOURCES
+.Nm
 understands the following X resources.
-.TP
-.B pmenu.font
-The font in which the labels should be drawn.
-.TP
-.B pmenu.background
-The background color of non-selected slices in the menu.
-.TP
-.B pmenu.foreground
-The color of the label text of non-selected slices in the menu.
-.TP
-.B pmenu.selbackground
-The background color of selected slices in the menu.
-.TP
-.B pmenu.selforeground
-The color of the label text of selected slices in the menu.
-.TP
-.B pmenu.border
-The color of the border around the menu.
-.TP
-.B pmenu.separator
-The color of the separator between slices in the menu.
-.TP
-.B pmenu.borderWidth
-The size in pixels of the border around the menu.
-.TP
-.B pmenu.separatorWidth
-The size in pixels of the slice separator.
-.TP
-.B pmenu.diameterWidth
+They must be prefixed with either the
+.Qq Ic PMenu
+class or the name given with the
+.Fl N
+command-line option, followed by a period.
+.Bl -tag -width Ds
+.It Ic activeBackground
+Background color for selected slices.
+.It Ic activeForeground
+Text color for selected slices.
+.It Ic background
+Background color.
+.It Ic borderColor
+Color of the border around pie menus.
+.It Ic borderWidth
+Size in pixels of the border around pie menus.
+.It Ic diameterWidth
 The size in pixels of the pie menu.
-.SH ENVIRONMENT
+.It Ic faceName
+Font for drawing text.
+If the value is prefixed with
+.Qq Ic "xft:"
+(case insensitive), then
+.Nm
+uses the
+.Xr Xft 3
+library for drawing text;
+and fallback fonts can be specified by delimiting the fonts with commas.
+If the value is prefixed with
+.Qq Ic "x:"
+or
+.Qq Ic "x11:"
+(case insensitive), then
+.Nm
+uses the X11 library for drawing text;
+if only one font is specified, regular X11 fonts are used;
+if two or more fonts are specified (delimited with commas), a
+.Ft XFontSet
+is used (but that is not reliable, and depends on the locale,
+so it is better to not use more than one X11 font).
+.It Ic faceSize
+The size, in points, of the font.
+This only affects Xft fonts.
+.It Ic foreground
+Text color.
+.El
+.Pp
+The resources below can be used to implement a motif/3D look.
+.Bl -tag -width Ds
+.It Ic shadowThickness
+Size in pixels of the 3D border.
+.It Ic topShadowColor , bottomShadowColor , middleShadowColor
+Colors for a Motif-like (3D) pie menu.
+.Ic topShadowColor
+is the light, top color of the border;
+.Ic bottomShadowColor
+is the dark, bottom color of the border;
+and
+.Ic middleShadowColor
+is the background color.
+.El
+.Sh ENVIRONMENT
 The following environment variables affect the execution of
-.BR pmenu .
-.TP
-.B DISPLAY
+.Nm .
+.Bl -tag -width Ds
+.It Ev DISPLAY
 The display to start
-.B pmenu
+.Nm
 on.
-.TP
-.B ICONPATH
+.It Ev ICONPATH
 A colon-separated list of directories used to search for the location of image files.
-.SH EXAMPLES
+.El
+.Sh EXAMPLES
 The following script illustrates the use of
-.BR pmenu .
+.Nm .
 The output is redirected to
-.IR sh (1),
+.Xr sh 1 ,
 creating a command to be run by the shell.
-.IP
-.EX
+.Bd -literal -offset indent
 #!/bin/sh
 
 <<EOF pmenu | sh &
@@ -198,9 +250,13 @@ Terms
 Halt	poweroff
 Reboot	reboot
 EOF
-.EE
-.PP
-For example, by selecting \(lqApps\(rq, a new menu will appear.
-Selecting \(lqFirefox\(rq in the new menu opens firefox.
-.SH SEE ALSO
-.IR xmenu (1)
+.Ed
+.Pp
+For example, by selecting
+.Dq "Apps" ,
+a new menu appears.
+Selecting
+.Dq "Firefox"
+in the new menu opens Firefox.
+.Sh SEE ALSO
+.Xr xmenu 1
