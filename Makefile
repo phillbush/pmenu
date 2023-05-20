@@ -20,6 +20,9 @@ all: ${PROG}
 ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} ${LIBS} ${LDFLAGS}
 
+pmenu.o: ctrlfnt.h
+${OBJS}: defs.h
+
 .c.o:
 	${CC} -std=c99 -pedantic ${DEFS} ${INCS} ${CFLAGS} ${CPPFLAGS} -c $<
 

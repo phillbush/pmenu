@@ -21,6 +21,7 @@
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
+#include "defs.h"
 #include "ctrlfnt.h"
 
 #define SHELL    "sh"
@@ -30,12 +31,6 @@
 #define TTVERT   30             /* vertical distance from mouse to place tooltip */
 #define MAXPATHS 128            /* maximal number of paths to look for icons */
 #define ICONPATH "ICONPATH"     /* environment variable name */
-#define LEN(a)          (sizeof(a) / sizeof((a)[0]))
-#define FLAG(f, b)      (((f) & (b)) == (b))
-#define RETURN_FAILURE  (-1)
-#define RETURN_SUCCESS  0
-#define FALSE           0
-#define TRUE            1
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
