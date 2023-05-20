@@ -259,7 +259,7 @@ static int niconpaths = 0;              /* number of paths to icon directories *
 static void
 usage(void)
 {
-	(void)fprintf(stderr, "usage: pmenu [-ew] [-d diameter] [(-x|-X) [modifier-]button]\n");
+	(void)fprintf(stderr, "usage: pmenu [-ew] [-d diameter] [-N name] [(-x|-X) [modifier-]button]\n");
 	exit(1);
 }
 
@@ -381,11 +381,18 @@ getoptions(int argc, char **argv)
 	char *endp, *s, *t;
 
 	classh.res_class = CLASS;
-	classh.res_name = argv[0];
-	if ((s = strrchr(argv[0], '/')) != NULL)
-		classh.res_name = s + 1;
+	classh.res_name = getenv("RESOURCES_NAME");
+	if (classh.res_name == NULL && argv[0] != NULL && argv[0][0] != '\0') {
+		if ((classh.res_name = strrchr(argv[0], '/')) != NULL) {
+			classh.res_name++;
+		} else {
+			classh.res_name = argv[0];
+		}
+	}
+	if (classh.res_name == NULL)
+		classh.res_name = NAME;
 	parseiconpaths(getenv(ICONPATH));
-	while ((ch = getopt(argc, argv, "d:ewx:X:P:r:m:p")) != -1) {
+	while ((ch = getopt(argc, argv, "d:eN:wx:X:P:r:m:p")) != -1) {
 		switch (ch) {
 		case 'd':
 			l = strtol(optarg, &endp, 10);
@@ -394,6 +401,9 @@ getoptions(int argc, char **argv)
 			break;
 		case 'e':
 			execcommand = !execcommand;
+			break;
+		case 'N':
+			classh.res_name = optarg;
 			break;
 		case 'w':
 			nowarpflag = 1;
@@ -1967,8 +1977,8 @@ initresources(void)
 	int i;
 
 	XrmInitialize();
-	pie.application.class = XrmPermStringToQuark(CLASS);
-	pie.application.name = XrmPermStringToQuark(NAME);
+	pie.application.class = XrmPermStringToQuark(classh.res_class);
+	pie.application.name = XrmPermStringToQuark(classh.res_name);
 	for (i = 0; i < NRESOURCES; i++) {
 		pie.resources[i].class = XrmPermStringToQuark(resourceids[i].class);
 		pie.resources[i].name = XrmPermStringToQuark(resourceids[i].name);
