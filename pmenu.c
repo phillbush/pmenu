@@ -43,7 +43,7 @@
 #define RESOURCES                                                       \
 	X(BORDER_CLR,   "BorderColor",          "borderColor")          \
 	X(BORDER_WID,   "BorderWidth",          "borderWidth")          \
-	X(DIAMETER,     "Diameter",             "diameter")             \
+	X(DIAMETER,     "DiameterWidth",        "diameterWidth")        \
 	X(FACE_NAME,    "FaceName",             "faceName")             \
 	X(FACE_SIZE,    "FaceSize",             "faceSize")             \
 	X(NORMAL_BG,    "Background",           "background")           \
@@ -52,7 +52,8 @@
 	X(SELECT_FG,    "ActiveForeground",     "activeForeground")     \
 	X(SHADOW_BOT,   "BottomShadowColor",    "bottomShadowColor")    \
 	X(SHADOW_MID,   "MiddleShadowColor",    "middleShadowColor")    \
-	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor")
+	X(SHADOW_TOP,   "TopShadowColor",       "topShadowColor")       \
+	X(SHADOW_WID,   "ShadowThickness",      "shadowThickness")
 
 #define DEF_BORDER 2
 #define DEF_DIAMETER 200
@@ -105,26 +106,6 @@ enum Atoms {
 
 /* state of command to popen */
 enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
-
-/* configuration structure */
-struct Config {
-	const char *font;
-	const char *background_color;
-	const char *foreground_color;
-	const char *selbackground_color;
-	const char *selforeground_color;
-	const char *separator_color;
-	const char *border_color;
-	int border_pixels;
-	int separator_pixels;
-	int triangle_width;
-	int triangle_height;
-	int triangle_distance;
-	int execcommand;
-	unsigned diameter_pixels;
-	double separatorbeg;
-	double separatorend;
-};
 
 /* draw context structure */
 struct DC {
@@ -1812,6 +1793,7 @@ loadresources(const char *str)
 		case SHADOW_TOP:
 			setcolor(SCHEME_BORDER, COLOR_TOP, value);
 			break;
+		case SHADOW_WID:
 		case BORDER_WID:
 			l = strtol(value, &endp, 10);
 			if (value[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
