@@ -218,6 +218,7 @@ static XClassHint classh;
 static struct Pie pie = { 0 };
 
 /* flags */
+static int harddiameter = 0;
 static int execcommand = 0;
 static int rootmodeflag = 0;            /* wheter to run in root mode */
 static int nowarpflag = 0;              /* whether to disable pointer warping */
@@ -372,8 +373,10 @@ getoptions(int argc, char **argv)
 		switch (ch) {
 		case 'd':
 			l = strtol(optarg, &endp, 10);
-			if (optarg[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
+			if (optarg[0] != '\0' && *endp == '\0' && l > 0 && l <= 100) {
+				harddiameter = 1;
 				pie.diameter = l;
+			}
 			break;
 		case 'e':
 			execcommand = !execcommand;
@@ -1777,7 +1780,8 @@ loadresources(const char *str)
 	if ((xdb = loadxdb(str)) == NULL)
 		return;
 	pie.border = DEF_BORDER;
-	pie.diameter = DEF_DIAMETER;
+	if (!harddiameter)
+		pie.diameter = DEF_DIAMETER;
 	for (resource = 0; resource < NRESOURCES; resource++) {
 		value = getresource(xdb, resource);
 		if (value == NULL)
@@ -1800,6 +1804,8 @@ loadresources(const char *str)
 				pie.border = l;
 			break;
 		case DIAMETER:
+			if (harddiameter)
+				break;
 			l = strtol(value, &endp, 10);
 			if (value[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
 				pie.diameter = l;
