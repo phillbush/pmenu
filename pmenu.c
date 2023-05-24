@@ -177,6 +177,15 @@ struct Monitor {
 };
 
 struct Pie {
+	Display *display;
+	Visual *visual;
+	Window rootwin;
+	Colormap colormap;
+	XRenderPictFormat *xformat, *alphaformat;
+	int screen;
+	int depth;
+	Atom atoms[NATOMS];
+	XClassHint classh;
 	Window dummy;
 
 	GC gc;              /* graphic context of the bitmaps */
@@ -205,16 +214,7 @@ struct Pie {
 };
 
 /* X stuff */
-static Display *display;
-static Visual *visual;
-static Window rootwin;
-static Colormap colormap;
-static XRenderPictFormat *xformat, *alphaformat;
-static int screen;
-static int depth;
 static struct DC dc;
-static Atom atoms[NATOMS];
-static XClassHint classh;
 
 /* The pie bitmap structure */
 static struct Pie pie = { 0 };
@@ -246,21 +246,21 @@ static Window
 createwindow(int width, int height, long eventmask)
 {
 	return XCreateWindow(
-		display,
-		rootwin,
+		pie.display,
+		pie.rootwin,
 		0, 0,
 		width,
 		height,
 		0,
-		depth,
+		pie.depth,
 		InputOutput,
-		visual,
+		pie.visual,
 		CWBackPixel | CWEventMask | CWColormap |
 		CWBorderPixel | CWOverrideRedirect | CWSaveUnder,
 		&(XSetWindowAttributes){
 			.border_pixel = 0,
 			.background_pixel = 0,
-			.colormap = colormap,
+			.colormap = pie.colormap,
 			.event_mask = eventmask,
 			.save_under = True,     /* pop-up windows should save_under */
 			.override_redirect = True,
@@ -361,17 +361,17 @@ getoptions(int argc, char **argv)
 	int ch;
 	char *endp, *s, *t;
 
-	classh.res_class = CLASS;
-	classh.res_name = getenv("RESOURCES_NAME");
-	if (classh.res_name == NULL && argv[0] != NULL && argv[0][0] != '\0') {
-		if ((classh.res_name = strrchr(argv[0], '/')) != NULL) {
-			classh.res_name++;
+	pie.classh.res_class = CLASS;
+	pie.classh.res_name = getenv("RESOURCES_NAME");
+	if (pie.classh.res_name == NULL && argv[0] != NULL && argv[0][0] != '\0') {
+		if ((pie.classh.res_name = strrchr(argv[0], '/')) != NULL) {
+			pie.classh.res_name++;
 		} else {
-			classh.res_name = argv[0];
+			pie.classh.res_name = argv[0];
 		}
 	}
-	if (classh.res_name == NULL)
-		classh.res_name = NAME;
+	if (pie.classh.res_name == NULL)
+		pie.classh.res_name = NAME;
 	parseiconpaths(getenv(ICONPATH));
 	while ((ch = getopt(argc, argv, "d:eN:wx:X:P:r:m:p")) != -1) {
 		switch (ch) {
@@ -386,7 +386,7 @@ getoptions(int argc, char **argv)
 			execcommand = !execcommand;
 			break;
 		case 'N':
-			classh.res_name = optarg;
+			pie.classh.res_name = optarg;
 			break;
 		case 'w':
 			nowarpflag = 1;
@@ -452,21 +452,21 @@ initpie(void)
 	pie.outerangle = atan(1.0 / (2.0 * pie.separatorend));
 
 	/* Create a simple bitmap mask (depth = 1) */
-	pie.clip = XCreatePixmap(display, pie.dummy, pie.fulldiameter, pie.fulldiameter, 1);
+	pie.clip = XCreatePixmap(pie.display, pie.dummy, pie.fulldiameter, pie.fulldiameter, 1);
 
 	/* Create the mask GC */
 	values.background = 1;
 	values.arc_mode = ArcPieSlice;
 	valuemask = GCBackground | GCArcMode;
-	pie.gc = XCreateGC(display, pie.clip, valuemask, &values);
+	pie.gc = XCreateGC(pie.display, pie.clip, valuemask, &values);
 
 	/* clear the bitmap */
-	XSetForeground(display, pie.gc, 0);
-	XFillRectangle(display, pie.clip, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
+	XSetForeground(pie.display, pie.gc, 0);
+	XFillRectangle(pie.display, pie.clip, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
 
 	/* create round shape */
-	XSetForeground(display, pie.gc, 1);
-	XFillArc(display, pie.clip, pie.gc, 0, 0,
+	XSetForeground(pie.display, pie.gc, 1);
+	XFillArc(pie.display, pie.clip, pie.gc, 0, 0,
 	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
 	return RETURN_SUCCESS;
 }
@@ -526,17 +526,17 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	);
 
 	/* Set window type */
-	XChangeProperty(display, menu->win, atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
-	                PropModeReplace, (unsigned char *)&atoms[NET_WM_WINDOW_TYPE_POPUP_MENU], 1);
+	XChangeProperty(pie.display, menu->win, pie.atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
+	                PropModeReplace, (unsigned char *)&pie.atoms[NET_WM_WINDOW_TYPE_POPUP_MENU], 1);
 
-	XShapeCombineMask(display, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
-	XShapeCombineMask(display, menu->win, ShapeBounding, 0, 0, pie.clip, ShapeSet);
+	XShapeCombineMask(pie.display, menu->win, ShapeClip, 0, 0, pie.clip, ShapeSet);
+	XShapeCombineMask(pie.display, menu->win, ShapeBounding, 0, 0, pie.clip, ShapeSet);
 
 	/* set window manager hints */
 	sizeh.flags = USPosition | PMaxSize | PMinSize;
 	sizeh.min_width = sizeh.max_width = pie.fulldiameter;
 	sizeh.min_height = sizeh.max_height = pie.fulldiameter;
-	XSetWMProperties(display, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &classh);
+	XSetWMProperties(pie.display, menu->win, NULL, NULL, NULL, 0, &sizeh, NULL, &pie.classh);
 
 	/* set menu variables */
 	menu->parent = parent;
@@ -549,8 +549,20 @@ allocmenu(struct Menu *parent, struct Slice *list, int level)
 	menu->level = level;
 
 	/* create pixmap and picture */
-	menu->pixmap = XCreatePixmap(display, menu->win, pie.fulldiameter, pie.fulldiameter, depth);
-	menu->picture = XRenderCreatePicture(display, menu->pixmap, xformat, 0, NULL);
+	menu->pixmap = XCreatePixmap(
+		pie.display,
+		menu->win,
+		pie.fulldiameter,
+		pie.fulldiameter,
+		pie.depth
+	);
+	menu->picture = XRenderCreatePicture(
+		pie.display,
+		menu->pixmap,
+		pie.xformat,
+		0,
+		NULL
+	);
 	menu->drawn = 0;
 
 	return menu;
@@ -811,8 +823,20 @@ setslices(struct Menu *menu)
 		}
 
 		/* create pixmap */
-		slice->pixmap = XCreatePixmap(display, menu->win, pie.fulldiameter, pie.fulldiameter, depth);
-		slice->picture = XRenderCreatePicture(display, slice->pixmap, xformat, 0, NULL);
+		slice->pixmap = XCreatePixmap(
+			pie.display,
+			menu->win,
+			pie.fulldiameter,
+			pie.fulldiameter,
+			pie.depth
+		);
+		slice->picture = XRenderCreatePicture(
+			pie.display,
+			slice->pixmap,
+			pie.xformat,
+			0,
+			NULL
+		);
 		slice->drawn = 0;
 
 		/* create tooltip */
@@ -823,10 +847,27 @@ setslices(struct Menu *menu)
 			w = slice->ttw + TTBORDER * 2;
 			h = pie.tooltiph + TTBORDER * 2;
 			slice->tooltip = createwindow(w, h, 0);
-			slice->ttpix = XCreatePixmap(display, slice->tooltip, w, h, depth);
-			slice->ttpict = XRenderCreatePicture(display, slice->ttpix, xformat, 0, NULL);
-			XChangeProperty(display, slice->tooltip, atoms[NET_WM_WINDOW_TYPE], XA_ATOM, 32,
-			                PropModeReplace, (unsigned char *)&atoms[NET_WM_WINDOW_TYPE_TOOLTIP], 1);
+			slice->ttpix = XCreatePixmap(
+				pie.display,
+				slice->tooltip,
+				w, h,
+				pie.depth
+			);
+			slice->ttpict = XRenderCreatePicture(
+				pie.display,
+				slice->ttpix,
+				pie.xformat,
+				0, NULL
+			);
+			XChangeProperty(
+				pie.display,
+				slice->tooltip,
+				pie.atoms[NET_WM_WINDOW_TYPE],
+				XA_ATOM, 32,
+				PropModeReplace,
+				(unsigned char *)&pie.atoms[NET_WM_WINDOW_TYPE_TOOLTIP],
+				1
+			);
 
 		} else {
 			slice->ttw = 0;
@@ -855,13 +896,13 @@ getmonitor(struct Monitor *mon)
 	int nmons;
 	int i;
 
-	XQueryPointer(display, rootwin, &dw, &dw, &mon->cursx, &mon->cursy, &di, &di, &du);
+	XQueryPointer(pie.display, pie.rootwin, &dw, &dw, &mon->cursx, &mon->cursy, &di, &di, &du);
 
 	mon->x = mon->y = 0;
-	mon->w = DisplayWidth(display, screen);
-	mon->h = DisplayHeight(display, screen);
+	mon->w = DisplayWidth(pie.display, pie.screen);
+	mon->h = DisplayHeight(pie.display, pie.screen);
 
-	if ((info = XineramaQueryScreens(display, &nmons)) != NULL) {
+	if ((info = XineramaQueryScreens(pie.display, &nmons)) != NULL) {
 		int selmon = 0;
 
 		for (i = 0; i < nmons; i++) {
@@ -889,7 +930,7 @@ grabpointer(void)
 	int i;
 
 	for (i = 0; i < 1000; i++) {
-		if (XGrabPointer(display, rootwin, True, ButtonPressMask,
+		if (XGrabPointer(pie.display, pie.rootwin, True, ButtonPressMask,
 		                 GrabModeAsync, GrabModeAsync, None,
 		                 None, CurrentTime) == GrabSuccess)
 			return;
@@ -906,7 +947,7 @@ grabkeyboard(void)
 	int i;
 
 	for (i = 0; i < 1000; i++) {
-		if (XGrabKeyboard(display, rootwin, True, GrabModeAsync,
+		if (XGrabKeyboard(pie.display, pie.rootwin, True, GrabModeAsync,
 		                  GrabModeAsync, CurrentTime) == GrabSuccess)
 			return;
 		nanosleep(&ts, NULL);
@@ -928,7 +969,7 @@ placemenu(struct Monitor *mon, struct Menu *menu)
 		x = mon->cursx;
 		y = mon->cursy;
 	} else {
-		ret = XTranslateCoordinates(display, menu->parent->win, rootwin,
+		ret = XTranslateCoordinates(pie.display, menu->parent->win, pie.rootwin,
 		                            menu->caller->x, menu->caller->y,
 		                            &x, &y, &w1);
 		if (ret == False)
@@ -950,7 +991,7 @@ placemenu(struct Monitor *mon, struct Menu *menu)
 	}
 	changes.x = menu->x;
 	changes.y = menu->y;
-	XConfigureWindow(display, menu->win, CWX | CWY, &changes);
+	XConfigureWindow(pie.display, menu->win, CWX | CWY, &changes);
 	for (slice = menu->list; slice != NULL; slice = slice->next) {
 		if (slice->submenu != NULL) {
 			placemenu(mon, slice->submenu);
@@ -1015,8 +1056,8 @@ maptooltip(struct Monitor *mon, struct Slice *slice, int x, int y)
 		y = mon->y + mon->h - pie.tooltiph - 2;
 	if (x + slice->ttw + 2 > mon->x + mon->w)
 		x = mon->x + mon->w - slice->ttw - 2;
-	XMoveWindow(display, slice->tooltip, x, y);
-	XMapRaised(display, slice->tooltip);
+	XMoveWindow(pie.display, slice->tooltip, x, y);
+	XMapRaised(pie.display, slice->tooltip);
 }
 
 /* unmap tooltip if mapped, set mapped to zero */
@@ -1025,7 +1066,7 @@ unmaptooltip(struct Slice *slice)
 {
 	if (slice == NULL || slice->icon == NULL || slice->label == NULL)
 		return;
-	XUnmapWindow(display, slice->tooltip);
+	XUnmapWindow(pie.display, slice->tooltip);
 }
 
 /* unmap previous menus; map current menu and its parents */
@@ -1043,7 +1084,7 @@ mapmenu(struct Menu *currmenu, struct Menu *prevmenu)
 
 	/* if this is the first time mapping, skip calculations */
 	if (prevmenu == NULL) {
-		XMapRaised(display, currmenu->win);
+		XMapRaised(pie.display, currmenu->win);
 		goto done;
 	}
 
@@ -1068,12 +1109,12 @@ mapmenu(struct Menu *currmenu, struct Menu *prevmenu)
 	/* unmap menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = prevmenu; menu != lcamenu; menu = menu->parent) {
 		menu->selected = NULL;
-		XUnmapWindow(display, menu->win);
+		XUnmapWindow(pie.display, menu->win);
 	}
 
 	/* map menus from currmenu (inclusive) until lcamenu (exclusive) */
 	for (menu = currmenu; menu != lcamenu; menu = menu->parent)
-		XMapRaised(display, menu->win);
+		XMapRaised(pie.display, menu->win);
 
 done:
 	return currmenu;
@@ -1087,7 +1128,7 @@ unmapmenu(struct Menu *currmenu)
 
 	for (menu = currmenu; menu; menu = menu->parent) {
 		menu->selected = NULL;
-		XUnmapWindow(display, menu->win);
+		XUnmapWindow(pie.display, menu->win);
 	}
 }
 
@@ -1126,11 +1167,11 @@ drawslice(Picture picture, Picture color, int nslices, int slicen, int separator
 	}
 	
 	XRenderCompositeDoublePoly(
-		display,
+		pie.display,
 		PictOpOver,
 		color,
 		picture,
-		alphaformat,
+		pie.alphaformat,
 		0, 0, 0, 0, p, npoints, 0
 	);
 	free(p);
@@ -1153,11 +1194,11 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	p[3].x = pie.border + pie.radius + pie.separatorend * cos(a - pie.outerangle);
 	p[3].y = pie.border + pie.radius + pie.separatorend * sin(a - pie.outerangle);
 	XRenderCompositeDoublePoly(
-		display,
+		pie.display,
 		PictOpOver,
 		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
 		picture,
-		alphaformat,
+		pie.alphaformat,
 		0, 0, 0, 0, p, 4, 0
 	);
 }
@@ -1177,11 +1218,11 @@ drawtriangle(Picture source, Picture picture, struct Menu *menu, struct Slice *s
 	p[2].x = pie.border + pie.radius + pie.triangleinner * cos(a + pie.triangleangle);
 	p[2].y = pie.border + pie.radius + pie.triangleinner * sin(a + pie.triangleangle);
 	XRenderCompositeDoublePoly(
-		display,
+		pie.display,
 		PictOpOver,
 		source,
 		picture,
-		alphaformat,
+		pie.alphaformat,
 		0, 0, 0, 0, p, 3, 0
 	);
 }
@@ -1209,7 +1250,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	}
 
 	XRenderComposite(
-		display,
+		pie.display,
 		PictOpSrc,
 		pie.gradient,
 		None,
@@ -1281,7 +1322,7 @@ drawtooltip(struct Slice *slice)
 {
 
 	XRenderFillRectangle(
-		display,
+		pie.display,
 		PictOpSrc,
 		slice->ttpict,
 		&dc.colors[SCHEME_NORMAL][COLOR_FG].chans,
@@ -1290,7 +1331,7 @@ drawtooltip(struct Slice *slice)
 		pie.tooltiph + TTBORDER * 2
 	);
 	XRenderFillRectangle(
-		display,
+		pie.display,
 		PictOpSrc,
 		slice->ttpict,
 		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
@@ -1311,8 +1352,8 @@ drawtooltip(struct Slice *slice)
 		slice->label,
 		strlen(slice->label)
 	);
-	XSetWindowBackgroundPixmap(display, slice->tooltip, slice->ttpix);
-	XClearWindow(display, slice->tooltip);
+	XSetWindowBackgroundPixmap(pie.display, slice->tooltip, slice->ttpix);
+	XClearWindow(pie.display, slice->tooltip);
 	slice->ttdrawn = 1;
 }
 
@@ -1333,8 +1374,8 @@ copymenu(struct Menu *currmenu)
 			if (!menu->drawn)
 				drawmenu(menu, NULL);
 		}
-		XSetWindowBackgroundPixmap(display, menu->win, pixmap);
-		XClearWindow(display, menu->win);
+		XSetWindowBackgroundPixmap(pie.display, menu->win, pixmap);
+		XClearWindow(pie.display, menu->win);
 	}
 }
 
@@ -1383,13 +1424,13 @@ cleanmenu(struct Menu *menu)
 		if (tmp->label != tmp->output)
 			free(tmp->label);
 		free(tmp->output);
-		XFreePixmap(display, slice->pixmap);
+		XFreePixmap(pie.display, slice->pixmap);
 		if (slice->tooltip != None)
-			XDestroyWindow(display, slice->tooltip);
+			XDestroyWindow(pie.display, slice->tooltip);
 		if (slice->ttpix != None)
-			XFreePixmap(display, slice->ttpix);
+			XFreePixmap(pie.display, slice->ttpix);
 		if (slice->ttpict != None)
-			XRenderFreePicture(display, slice->ttpict);
+			XRenderFreePicture(pie.display, slice->ttpict);
 		if (tmp->file != NULL)
 			free(tmp->file);
 		if (tmp->icon != NULL) {
@@ -1400,8 +1441,8 @@ cleanmenu(struct Menu *menu)
 		free(tmp);
 	}
 
-	XFreePixmap(display, menu->pixmap);
-	XDestroyWindow(display, menu->win);
+	XFreePixmap(pie.display, menu->pixmap);
+	XDestroyWindow(pie.display, menu->win);
 	free(menu);
 }
 
@@ -1451,8 +1492,8 @@ genmenu(struct Monitor *mon, struct Menu *menu, struct Slice *slice)
 static void
 ungrab(void)
 {
-	XUngrabPointer(display, CurrentTime);
-	XUngrabKeyboard(display, CurrentTime);
+	XUngrabPointer(pie.display, CurrentTime);
+	XUngrabKeyboard(pie.display, CurrentTime);
 }
 
 /* create tooltip */
@@ -1462,7 +1503,7 @@ tooltip(struct Menu *currmenu, XEvent *ev)
 	struct Menu *menu = NULL;
 	struct Slice *slice = NULL;
 
-	while (!XNextEvent(display, ev)) {
+	while (!XNextEvent(pie.display, ev)) {
 		switch (ev->type) {
 		case MotionNotify:
 			menu = getmenu(currmenu, ev->xmotion.window);
@@ -1505,7 +1546,7 @@ static void
 warppointer(struct Menu *currmenu)
 {
 	XWarpPointer(
-		display,
+		pie.display,
 		None,
 		currmenu->win,
 		0, 0, 0, 0,
@@ -1532,7 +1573,7 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 	timeout = -1;
 	ttx = tty = 0;
 	prevmenu = currmenu = rootmenu;
-	while (XPending(display) || (nready = poll(pfd, 1, timeout)) != -1) {
+	while (XPending(pie.display) || (nready = poll(pfd, 1, timeout)) != -1) {
 		if (nready == 0 && currmenu != NULL && currmenu->selected != NULL) {
 			if (!currmenu->selected->ttdrawn)
 				drawtooltip(currmenu->selected);
@@ -1540,7 +1581,7 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 			tooltip(currmenu, &ev);
 			unmaptooltip(currmenu->selected);
 		} else {
-			XNextEvent(display, &ev);
+			XNextEvent(pie.display, &ev);
 		}
 		switch (ev.type) {
 		case MotionNotify:
@@ -1614,7 +1655,7 @@ selectslice:
 			break;
 		case KeyPress:
 			timeout = -1;
-			ksym = XkbKeycodeToKeysym(display, ev.xkey.keycode, 0, 0);
+			ksym = XkbKeycodeToKeysym(pie.display, ev.xkey.keycode, 0, 0);
 
 			/* esc closes pmenu when current menu is the root menu */
 			if (ksym == XK_Escape && currmenu->parent == NULL)
@@ -1652,7 +1693,7 @@ selectslice:
 			menu->y = ev.xconfigure.y;
 			break;
 		}
-		XFlush(display);
+		XFlush(pie.display);
 	}
 	if (nready == -1)
 		err(1, "poll");
@@ -1673,22 +1714,22 @@ cleandc(void)
 		for (j = 0; j < COLOR_LAST; j++) {
 			if (dc.colors[i][j].pict != None) {
 				XRenderFreePicture(
-					display,
+					pie.display,
 					dc.colors[i][j].pict
 				);
 			}
 			if (dc.colors[i][j].pix != None) {
 				XFreePixmap(
-					display,
+					pie.display,
 					dc.colors[i][j].pix
 				);
 			}
 		}
 	}
-	XFreePixmap(display, pie.clip);
-	XDestroyWindow(display, pie.dummy);
-	XRenderFreePicture(display, pie.gradient);
-	XFreeGC(display, dc.gc);
+	XFreePixmap(pie.display, pie.clip);
+	XDestroyWindow(pie.display, pie.dummy);
+	XRenderFreePicture(pie.display, pie.gradient);
+	XFreeGC(pie.display, dc.gc);
 }
 
 static char *
@@ -1719,7 +1760,7 @@ setcolor(int scheme, int colornum, const char *colorname)
 
 	if (colorname == NULL)
 		return;
-	if (!XParseColor(display, colormap, colorname, &color)) {
+	if (!XParseColor(pie.display, pie.colormap, colorname, &color)) {
 		warnx("%s: unknown color name", colorname);
 		return;
 	}
@@ -1730,7 +1771,7 @@ setcolor(int scheme, int colornum, const char *colorname)
 		.alpha = 0xFFFF,
 	};
 	XRenderFillRectangle(
-		display,
+		pie.display,
 		PictOpSrc,
 		dc.colors[scheme][colornum].pict,
 		&dc.colors[scheme][colornum].chans,
@@ -1746,10 +1787,10 @@ setfont(const char *facename, double facesize)
 	if (facename == NULL)
 		facename = "xft:";
 	fontset = ctrlfnt_open(
-		display,
-		screen,
-		visual,
-		colormap,
+		pie.display,
+		pie.screen,
+		pie.visual,
+		pie.colormap,
 		facename,
 		facesize
 	);
@@ -1853,7 +1894,7 @@ loadresources(const char *str)
 
 	/* create gradient picture */
 	if (pie.gradient != None)
-		XRenderFreePicture(display, pie.gradient);
+		XRenderFreePicture(pie.display, pie.gradient);
 	d = pie.fulldiameter * pie.fulldiameter * 2;
 	d = sqrt(d);
 	d0 = d - pie.fulldiameter;
@@ -1864,7 +1905,7 @@ loadresources(const char *str)
 	d1 += pie.fulldiameter;
 	d1 /= d;
 	pie.gradient = XRenderCreateLinearGradient(
-		display,
+		pie.display,
 		&(XLinearGradient){
 			.p1 = (XPointFixed){
 				.x = XDoubleToFixed(0.0),
@@ -1905,16 +1946,16 @@ initxconn(void)
 	ctrlfnt_init();
 	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
 		warnx("could not set locale");
-	if ((display = XOpenDisplay(NULL)) == NULL) {
+	if ((pie.display = XOpenDisplay(NULL)) == NULL) {
 		warnx("could not connect to X server");
 		return RETURN_FAILURE;
 	}
-	if (!XInternAtoms(display, atomnames, NATOMS, False, atoms)) {
-		warnx("could not intern X atoms");
+	if (!XInternAtoms(pie.display, atomnames, NATOMS, False, pie.atoms)) {
+		warnx("could not intern X pie.atoms");
 		return RETURN_FAILURE;
 	}
-	screen = DefaultScreen(display);
-	rootwin = RootWindow(display, screen);
+	pie.screen = DefaultScreen(pie.display);
+	pie.rootwin = RootWindow(pie.display, pie.screen);
 	return RETURN_SUCCESS;
 }
 
@@ -1926,32 +1967,32 @@ initvisual(void)
 	int success;
 
 	success = XMatchVisualInfo(
-		display,
-		screen,
+		pie.display,
+		pie.screen,
 		32,             /* preferred depth */
 		TrueColor,
 		&vinfo
 	);
 	cmap = success ? XCreateColormap(
-		display,
-		rootwin,
+		pie.display,
+		pie.rootwin,
 		vinfo.visual,
 		AllocNone
 	) : None;
 	if (success && cmap != None) {
-		colormap = cmap;
-		visual = vinfo.visual;
-		depth = vinfo.depth;
+		pie.colormap = cmap;
+		pie.visual = vinfo.visual;
+		pie.depth = vinfo.depth;
 	} else {
-		colormap = DefaultColormap(display, screen);
-		visual = DefaultVisual(display, screen);
-		depth = DefaultDepth(display, screen);
+		pie.colormap = DefaultColormap(pie.display, pie.screen);
+		pie.visual = DefaultVisual(pie.display, pie.screen);
+		pie.depth = DefaultDepth(pie.display, pie.screen);
 	}
-	xformat = XRenderFindVisualFormat(display, visual);
-	if (xformat == NULL)
+	pie.xformat = XRenderFindVisualFormat(pie.display, pie.visual);
+	if (pie.xformat == NULL)
 		goto error;
-	alphaformat = XRenderFindStandardFormat(display, PictStandardA8);
-	if (alphaformat == NULL)
+	pie.alphaformat = XRenderFindStandardFormat(pie.display, PictStandardA8);
+	if (pie.alphaformat == NULL)
 		goto error;
 	pie.dummy = createwindow(1, 1, 0);
 	if (pie.dummy == None) {
@@ -1977,8 +2018,8 @@ initresources(void)
 	int i;
 
 	XrmInitialize();
-	pie.application.class = XrmPermStringToQuark(classh.res_class);
-	pie.application.name = XrmPermStringToQuark(classh.res_name);
+	pie.application.class = XrmPermStringToQuark(pie.classh.res_class);
+	pie.application.name = XrmPermStringToQuark(pie.classh.res_name);
 	for (i = 0; i < NRESOURCES; i++) {
 		pie.resources[i].class = XrmPermStringToQuark(resourceids[i].class);
 		pie.resources[i].name = XrmPermStringToQuark(resourceids[i].name);
@@ -2002,19 +2043,19 @@ inittheme(void)
 	for (i = 0; i < SCHEME_LAST; i++) {
 		for (j = 0; j < COLOR_LAST; j++) {
 			dc.colors[i][j].pix = XCreatePixmap(
-				display,
+				pie.display,
 				pie.dummy,
 				1, 1,
-				depth
+				pie.depth
 			);
 			if (dc.colors[i][j].pix == None) {
 				warnx("could not create pixmap");
 				return RETURN_FAILURE;
 			}
 			dc.colors[i][j].pict = XRenderCreatePicture(
-				display,
+				pie.display,
 				dc.colors[i][j].pix,
-				xformat,
+				pie.xformat,
 				CPRepeat,
 				&(XRenderPictureAttributes){
 					.repeat = RepeatNormal,
@@ -2025,7 +2066,7 @@ inittheme(void)
 				return RETURN_FAILURE;
 			}
 			XRenderFillRectangle(
-				display,
+				pie.display,
 				PictOpSrc,
 				dc.colors[i][j].pict,
 				&dc.colors[i][j].chans,
@@ -2033,7 +2074,7 @@ inittheme(void)
 			);
 		}
 	}
-	loadresources(XResourceManagerString(display));
+	loadresources(XResourceManagerString(pie.display));
 	if (dc.fontset == NULL)
 		setfont(NULL, 0.0);
 	if (dc.fontset == NULL) {
@@ -2045,7 +2086,7 @@ inittheme(void)
 	values.arc_mode = ArcPieSlice;
 	values.line_width = 1;
 	valuemask = GCLineWidth | GCArcMode;
-	dc.gc = XCreateGC(display, pie.dummy, valuemask, &values);
+	dc.gc = XCreateGC(pie.display, pie.dummy, valuemask, &values);
 	return RETURN_SUCCESS;
 }
 
@@ -2076,13 +2117,13 @@ main(int argc, char *argv[])
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
 	imlib_context_set_dither(1);
-	imlib_context_set_display(display);
-	imlib_context_set_visual(visual);
-	imlib_context_set_colormap(colormap);
+	imlib_context_set_display(pie.display);
+	imlib_context_set_visual(pie.visual);
+	imlib_context_set_colormap(pie.colormap);
 
 	/* if running in root mode, get button presses from root window */
 	if (rootmodeflag)
-		XGrabButton(display, button, AnyModifier, rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
+		XGrabButton(pie.display, button, AnyModifier, pie.rootwin, False, ButtonPressMask, GrabModeSync, GrabModeSync, None, None);
 
 	/* generate menus and set them up */
 	rootmenu = parse(stdin, 0);
@@ -2090,18 +2131,18 @@ main(int argc, char *argv[])
 		errx(1, "no menu generated");
 	setslices(rootmenu);
 
-	pfd.fd = XConnectionNumber(display);
+	pfd.fd = XConnectionNumber(pie.display);
 	pfd.events = POLLIN;
 	do {
 		if (rootmodeflag)
-			XNextEvent(display, &ev);
+			XNextEvent(pie.display, &ev);
 		if (!rootmodeflag ||
 		    (ev.type == ButtonPress &&
 		     (modifier == AnyModifier ||
 		      (modifier && ev.xbutton.state == modifier) ||
 		      (ev.xbutton.subwindow == None)))) {
 			if (rootmodeflag && passclickflag) {
-				XAllowEvents(display, ReplayPointer, CurrentTime);
+				XAllowEvents(pie.display, ReplayPointer, CurrentTime);
 			}
 			getmonitor(&mon);
 			grabpointer();
@@ -2109,10 +2150,10 @@ main(int argc, char *argv[])
 			placemenu(&mon, rootmenu);
 			mapmenu(rootmenu, NULL);
 			warppointer(rootmenu);
-			XFlush(display);
+			XFlush(pie.display);
 			run(&pfd, &mon, rootmenu);
 		} else {
-			XAllowEvents(display, ReplayPointer, CurrentTime);
+			XAllowEvents(pie.display, ReplayPointer, CurrentTime);
 		}
 	} while (rootmodeflag);
 	exitval = EXIT_SUCCESS;
@@ -2121,7 +2162,7 @@ error:
 	free(iconstring);
 	cleanmenu(rootmenu);
 	cleandc();
-	XCloseDisplay(display);
+	XCloseDisplay(pie.display);
 	ctrlfnt_term();
 
 	return exitval;
