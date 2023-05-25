@@ -106,10 +106,8 @@ enum Atoms {
 #undef  X
 };
 
-/* state of command to popen */
 enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
 
-/* pie slice structure */
 struct Slice {
 	struct Slice *prev, *next;
 	struct Menu *submenu;   /* submenu spawned by clicking on slice */
@@ -139,7 +137,6 @@ struct Slice {
 	Picture ttpict;         /* pixmap for the tooltip */
 };
 
-/* menu structure */
 struct Menu {
 	struct Menu *parent;    /* parent menu */
 	struct Slice *caller;   /* slice that spawned the menu */
@@ -154,12 +151,6 @@ struct Menu {
 	Drawable pixmap;        /* pixmap to draw the menu on */
 	Picture picture;        /* XRender picture */
 	Window win;             /* menu window to map on the screen */
-};
-
-/* monitor and cursor geometry structure */
-struct Monitor {
-	int x, y, w, h;         /* monitor geometry */
-	int cursx, cursy;
 };
 
 struct Pie {
@@ -835,7 +826,7 @@ setslices(struct Menu *menu)
 
 /* query monitor information and cursor position */
 static void
-getmonitor(struct Monitor *mon)
+getmonitor(XRectangle *monitor, XPoint *pointer)
 {
 	XineramaScreenInfo *info = NULL;
 	Window dw;          /* dummy variable */
@@ -843,28 +834,29 @@ getmonitor(struct Monitor *mon)
 	unsigned du;        /* dummy variable */
 	int nmons;
 	int i;
+	int x, y;
 
-	XQueryPointer(pie.display, pie.rootwin, &dw, &dw, &mon->cursx, &mon->cursy, &di, &di, &du);
-
-	mon->x = mon->y = 0;
-	mon->w = DisplayWidth(pie.display, pie.screen);
-	mon->h = DisplayHeight(pie.display, pie.screen);
-
+	XQueryPointer(pie.display, pie.rootwin, &dw, &dw, &x, &y, &di, &di, &du);
+	pointer->x = x;
+	pointer->y = y;
+	monitor->x = monitor->y = 0;
+	monitor->width = DisplayWidth(pie.display, pie.screen);
+	monitor->height = DisplayHeight(pie.display, pie.screen);
 	if ((info = XineramaQueryScreens(pie.display, &nmons)) != NULL) {
 		int selmon = 0;
 
 		for (i = 0; i < nmons; i++) {
-			if (BETWEEN(mon->cursx, info[i].x_org, info[i].x_org + info[i].width) &&
-			    BETWEEN(mon->cursy, info[i].y_org, info[i].y_org + info[i].height)) {
+			if (BETWEEN(pointer->x, info[i].x_org, info[i].x_org + info[i].width) &&
+			    BETWEEN(pointer->y, info[i].y_org, info[i].y_org + info[i].height)) {
 				selmon = i;
 				break;
 			}
 		}
 
-		mon->x = info[selmon].x_org;
-		mon->y = info[selmon].y_org;
-		mon->w = info[selmon].width;
-		mon->h = info[selmon].height;
+		monitor->x = info[selmon].x_org;
+		monitor->y = info[selmon].y_org;
+		monitor->width = info[selmon].width;
+		monitor->height = info[selmon].height;
 
 		XFree(info);
 	}
@@ -905,7 +897,7 @@ grabkeyboard(void)
 
 /* setup the position of a menu */
 static void
-placemenu(struct Monitor *mon, struct Menu *menu)
+placemenu(struct Menu *menu, XRectangle *monitor, XPoint *pointer)
 {
 	struct Slice *slice;
 	XWindowChanges changes;
@@ -914,8 +906,8 @@ placemenu(struct Monitor *mon, struct Menu *menu)
 	Bool ret;
 
 	if (menu->parent == NULL) {
-		x = mon->cursx;
-		y = mon->cursy;
+		x = pointer->x;
+		y = pointer->y;
 	} else {
 		ret = XTranslateCoordinates(pie.display, menu->parent->win, pie.rootwin,
 		                            menu->caller->x, menu->caller->y,
@@ -923,26 +915,26 @@ placemenu(struct Monitor *mon, struct Menu *menu)
 		if (ret == False)
 			errx(EXIT_FAILURE, "menus are on different screens");
 	}
-	menu->x = mon->x;
-	menu->y = mon->y;
-	if (x - mon->x >= pie.radius + pie.border) {
-		if (mon->x + mon->w - x >= pie.radius + pie.border)
+	menu->x = monitor->x;
+	menu->y = monitor->y;
+	if (x - monitor->x >= pie.radius + pie.border) {
+		if (monitor->x + monitor->width - x >= pie.radius + pie.border)
 			menu->x = x - pie.radius - pie.border;
-		else if (mon->x + mon->w >= pie.fulldiameter)
-			menu->x = mon->x + mon->w - pie.fulldiameter;
+		else if (monitor->x + monitor->width >= pie.fulldiameter)
+			menu->x = monitor->x + monitor->width - pie.fulldiameter;
 	}
-	if (y - mon->y >= pie.radius + pie.border) {
-		if (mon->y + mon->h - y >= pie.radius + pie.border)
+	if (y - monitor->y >= pie.radius + pie.border) {
+		if (monitor->y + monitor->height - y >= pie.radius + pie.border)
 			menu->y = y - pie.radius - pie.border;
-		else if (mon->y + mon->h >= pie.fulldiameter)
-			menu->y = mon->y + mon->h - pie.fulldiameter;
+		else if (monitor->y + monitor->height >= pie.fulldiameter)
+			menu->y = monitor->y + monitor->height - pie.fulldiameter;
 	}
 	changes.x = menu->x;
 	changes.y = menu->y;
 	XConfigureWindow(pie.display, menu->win, CWX | CWY, &changes);
 	for (slice = menu->list; slice != NULL; slice = slice->next) {
 		if (slice->submenu != NULL) {
-			placemenu(mon, slice->submenu);
+			placemenu(slice->submenu, monitor, pointer);
 		}
 	}
 }
@@ -995,16 +987,16 @@ getslice(struct Menu *menu, int x, int y)
 
 /* map tooltip and place it on given position */
 static void
-maptooltip(struct Monitor *mon, struct Slice *slice, int x, int y)
+maptooltip(struct Slice *slice, XRectangle *monitor, XPoint *tooltippos)
 {
-	y += TTVERT;
+	tooltippos->y += TTVERT;
 	if (slice->icon == NULL || slice->label == NULL)
 		return;
-	if (y + pie.tooltiph + 2 > mon->y + mon->h)
-		y = mon->y + mon->h - pie.tooltiph - 2;
-	if (x + slice->ttw + 2 > mon->x + mon->w)
-		x = mon->x + mon->w - slice->ttw - 2;
-	XMoveWindow(pie.display, slice->tooltip, x, y);
+	if (tooltippos->y + pie.tooltiph + 2 > monitor->y + monitor->height)
+		tooltippos->y = monitor->y + monitor->height - pie.tooltiph - 2;
+	if (tooltippos->x + slice->ttw + 2 > monitor->x + monitor->width)
+		tooltippos->x = monitor->x + monitor->width - slice->ttw - 2;
+	XMoveWindow(pie.display, slice->tooltip, tooltippos->x, tooltippos->y);
 	XMapRaised(pie.display, slice->tooltip);
 }
 
@@ -1415,7 +1407,7 @@ cleangenmenu(struct Menu *menu)
 
 /* run command of slice to generate a submenu */
 static struct Menu *
-genmenu(struct Monitor *mon, struct Menu *menu, struct Slice *slice)
+genmenu(struct Menu *menu, struct Slice *slice, XRectangle *monitor, XPoint *pointer)
 {
 	FILE *fp;
 
@@ -1430,7 +1422,7 @@ genmenu(struct Monitor *mon, struct Menu *menu, struct Slice *slice)
 	slice->submenu->caller = slice;
 	slice->iscmd = CMD_RUN;
 	setslices(slice->submenu);
-	placemenu(mon, slice->submenu);
+	placemenu(slice->submenu, monitor, pointer);
 	if (slice->submenu->list == NULL) {
 		cleanmenu(slice->submenu);
 		return NULL;
@@ -1506,7 +1498,7 @@ warppointer(struct Menu *currmenu)
 }
 
 static void
-run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
+run(struct pollfd *pfd, struct Menu *rootmenu, XRectangle *monitor, XPoint *pointer)
 {
 	struct Menu *currmenu;
 	struct Menu *prevmenu;
@@ -1514,19 +1506,18 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 	struct Slice *slice = NULL;
 	KeySym ksym;
 	XEvent ev;
+	XPoint tooltippos = { 0 };
 	int timeout;
 	int nready;
-	int ttx, tty;
 
 	nready = 3;
 	timeout = -1;
-	ttx = tty = 0;
 	prevmenu = currmenu = rootmenu;
 	while (XPending(pie.display) || (nready = poll(pfd, 1, timeout)) != -1) {
 		if (nready == 0 && currmenu != NULL && currmenu->selected != NULL) {
 			if (!currmenu->selected->ttdrawn)
 				drawtooltip(currmenu->selected);
-			maptooltip(mon, currmenu->selected, ttx, tty);
+			maptooltip(currmenu->selected, monitor, &tooltippos);
 			tooltip(currmenu, &ev);
 			unmaptooltip(currmenu->selected);
 		} else {
@@ -1552,8 +1543,8 @@ run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 				/* motion inside a menu */
 				currmenu->selected = slice;
 				timeout = 1000;
-				ttx = ev.xmotion.x_root;
-				tty = ev.xmotion.y_root;
+				tooltippos.x = ev.xmotion.x_root;
+				tooltippos.y = ev.xmotion.y_root;
 			}
 			copymenu(currmenu);
 			break;
@@ -1569,7 +1560,7 @@ selectslice:
 			if (slice->submenu) {
 				currmenu = slice->submenu;
 			} else if (slice->iscmd == CMD_NOTRUN) {
-				if ((menu = genmenu(mon, menu, slice)) != NULL) {
+				if ((menu = genmenu(menu, slice, monitor, pointer)) != NULL) {
 					currmenu = menu;
 				}
 			} else {
@@ -2109,7 +2100,8 @@ main(int argc, char *argv[])
 	};
 	struct pollfd pfd;
 	struct Menu *rootmenu = NULL;
-	struct Monitor mon;
+	XRectangle monitor;
+	XPoint pointer;
 	XEvent ev;
 	size_t i;
 	int exitval = EXIT_FAILURE;
@@ -2151,14 +2143,14 @@ main(int argc, char *argv[])
 			if (rootmodeflag && passclickflag) {
 				XAllowEvents(pie.display, ReplayPointer, CurrentTime);
 			}
-			getmonitor(&mon);
+			getmonitor(&monitor, &pointer);
 			grabpointer();
 			grabkeyboard();
-			placemenu(&mon, rootmenu);
+			placemenu(rootmenu, &monitor, &pointer);
 			mapmenu(rootmenu, NULL);
 			warppointer(rootmenu);
 			XFlush(pie.display);
-			run(&pfd, &mon, rootmenu);
+			run(&pfd, rootmenu, &monitor, &pointer);
 		} else {
 			XAllowEvents(pie.display, ReplayPointer, CurrentTime);
 		}
