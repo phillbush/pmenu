@@ -31,6 +31,7 @@ The files are:
 * `./pmenu.1`:    The manual file (man page) for πmenu.
 * `./pmenu.c`:    The source code of πmenu.
 * `./pmenu.sh`:   A sample script illustrating how to use πmenu.
+* `./ctrlfnt.*`:  Routines for drawing text.
 
 
 ## Installation
