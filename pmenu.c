@@ -109,20 +109,6 @@ enum Atoms {
 /* state of command to popen */
 enum {NO_CMD = 0, CMD_NOTRUN = 1, CMD_RUN = 2};
 
-/* draw context structure */
-struct DC {
-	struct {
-		XRenderColor chans;
-		Pixmap pix;
-		Picture pict;
-	} colors[SCHEME_LAST][COLOR_LAST];
-
-	GC gc;                          /* graphics context */
-
-	CtrlFontSet *fontset;
-	int fonth;
-};
-
 /* pie slice structure */
 struct Slice {
 	struct Slice *prev, *next;
@@ -187,9 +173,15 @@ struct Pie {
 	Atom atoms[NATOMS];
 	XClassHint classh;
 	Window dummy;
+	struct {
+		XRenderColor chans;
+		Pixmap pix;
+		Picture pict;
+	} colors[SCHEME_LAST][COLOR_LAST];
+	CtrlFontSet *fontset;
+	int fonth;
 
-	GC gc;              /* graphic context of the bitmaps */
-	Drawable clip;
+	Pixmap clip;
 
 	Picture gradient;
 
@@ -212,9 +204,6 @@ struct Pie {
 	double innerangle;
 	double outerangle;
 };
-
-/* X stuff */
-static struct DC dc;
 
 /* The pie bitmap structure */
 static struct Pie pie = { 0 };
@@ -428,47 +417,6 @@ getoptions(int argc, char **argv)
 	if (argc > 0) {
 		usage();
 	}
-}
-
-/* setup pie */
-static int
-initpie(void)
-{
-	XGCValues values;
-	unsigned long valuemask;
-
-	/* set pie geometry */
-	pie.tooltiph = dc.fonth + 2 * TTPAD;
-
-	/* set the geometry of the triangle for submenus */
-	pie.triangleouter = pie.radius - TRIANGLE_DISTANCE;
-	pie.triangleinner = pie.radius - TRIANGLE_DISTANCE - TRIANGLE_WIDTH;
-	pie.triangleangle = ((double)TRIANGLE_HEIGHT / 2.0) / (double)pie.triangleinner;
-
-	/* set the separator beginning and end */
-	pie.separatorbeg = pie.radius * SEPARATOR_BEG;
-	pie.separatorend = pie.radius * SEPARATOR_END;
-	pie.innerangle = atan(1.0 / (2.0 * pie.separatorbeg));
-	pie.outerangle = atan(1.0 / (2.0 * pie.separatorend));
-
-	/* Create a simple bitmap mask (depth = 1) */
-	pie.clip = XCreatePixmap(pie.display, pie.dummy, pie.fulldiameter, pie.fulldiameter, 1);
-
-	/* Create the mask GC */
-	values.background = 1;
-	values.arc_mode = ArcPieSlice;
-	valuemask = GCBackground | GCArcMode;
-	pie.gc = XCreateGC(pie.display, pie.clip, valuemask, &values);
-
-	/* clear the bitmap */
-	XSetForeground(pie.display, pie.gc, 0);
-	XFillRectangle(pie.display, pie.clip, pie.gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
-
-	/* create round shape */
-	XSetForeground(pie.display, pie.gc, 1);
-	XFillArc(pie.display, pie.clip, pie.gc, 0, 0,
-	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
-	return RETURN_SUCCESS;
 }
 
 /* call malloc checking for error */
@@ -788,13 +736,13 @@ setslices(struct Menu *menu)
 
 		/* get length of slice->label rendered in the font */
 		if (slice->label != NULL)
-			textwidth = ctrlfnt_width(dc.fontset, slice->label, strlen(slice->label));
+			textwidth = ctrlfnt_width(pie.fontset, slice->label, strlen(slice->label));
 		else
 			textwidth = 0;
 
 		/* get position of slice's label */
 		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
-		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a)) - (dc.fonth / 2);
+		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a)) - (pie.fonth / 2);
 
 		/* get position of submenu */
 		slice->x = pie.radius + (pie.diameter * (cos(a) * 0.9));
@@ -1196,7 +1144,7 @@ drawseparator(Picture picture, struct Menu *menu, struct Slice *slice)
 	XRenderCompositeDoublePoly(
 		pie.display,
 		PictOpOver,
-		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
+		pie.colors[SCHEME_NORMAL][COLOR_FG].pict,
 		picture,
 		pie.alphaformat,
 		0, 0, 0, 0, p, 4, 0
@@ -1240,12 +1188,12 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	if (selected) {
 		pixmap = selected->pixmap;
 		picture = selected->picture;
-		fg = dc.colors[SCHEME_SELECT][COLOR_FG].pict;
+		fg = pie.colors[SCHEME_SELECT][COLOR_FG].pict;
 		selected->drawn = 1;
 	} else {
 		pixmap = menu->pixmap;
 		picture = menu->picture;
-		fg = dc.colors[SCHEME_NORMAL][COLOR_FG].pict;
+		fg = pie.colors[SCHEME_NORMAL][COLOR_FG].pict;
 		menu->drawn = 1;
 	}
 
@@ -1263,7 +1211,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	);
 	drawslice(
 		picture,
-		dc.colors[SCHEME_NORMAL][COLOR_BG].pict,
+		pie.colors[SCHEME_NORMAL][COLOR_BG].pict,
 		1,
 		0,
 		0
@@ -1271,7 +1219,7 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	if (selected != NULL) {
 		drawslice(
 			picture,
-			dc.colors[SCHEME_SELECT][COLOR_BG].pict,
+			pie.colors[SCHEME_SELECT][COLOR_BG].pict,
 			menu->nslices,
 			selected->slicen,
 			pie.separatorbeg
@@ -1281,9 +1229,9 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 	/* draw slice foreground */
 	for (slice = menu->list; slice; slice = slice->next) {
 		if (slice == selected) {
-			source = dc.colors[SCHEME_SELECT][COLOR_FG].pict;
+			source = pie.colors[SCHEME_SELECT][COLOR_FG].pict;
 		} else {
-			source = dc.colors[SCHEME_NORMAL][COLOR_FG].pict;
+			source = pie.colors[SCHEME_NORMAL][COLOR_FG].pict;
 		}
 
 		if (slice->icon != NULL) {      /* if there is an icon, draw it */
@@ -1292,14 +1240,14 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			imlib_render_image_on_drawable(slice->iconx, slice->icony);
 		} else {                        /* otherwise, draw the label */
 			ctrlfnt_draw(
-				dc.fontset,
+				pie.fontset,
 				picture,
 				fg,
 				(XRectangle){
 					.x = slice->labelx,
 					.y = slice->labely,
 					.width = pie.radius,
-					.height = dc.fonth,
+					.height = pie.fonth,
 				},
 				slice->label,
 				strlen(slice->label)
@@ -1325,7 +1273,7 @@ drawtooltip(struct Slice *slice)
 		pie.display,
 		PictOpSrc,
 		slice->ttpict,
-		&dc.colors[SCHEME_NORMAL][COLOR_FG].chans,
+		&pie.colors[SCHEME_NORMAL][COLOR_FG].chans,
 		0, 0,
 		slice->ttw + TTBORDER * 2,
 		pie.tooltiph + TTBORDER * 2
@@ -1334,20 +1282,20 @@ drawtooltip(struct Slice *slice)
 		pie.display,
 		PictOpSrc,
 		slice->ttpict,
-		&dc.colors[SCHEME_NORMAL][COLOR_BG].chans,
+		&pie.colors[SCHEME_NORMAL][COLOR_BG].chans,
 		TTBORDER, TTBORDER,
 		slice->ttw,
 		pie.tooltiph
 	);
 	ctrlfnt_draw(
-		dc.fontset,
+		pie.fontset,
 		slice->ttpict,
-		dc.colors[SCHEME_NORMAL][COLOR_FG].pict,
+		pie.colors[SCHEME_NORMAL][COLOR_FG].pict,
 		(XRectangle){
 			.x = TTPAD + TTBORDER,
 			.y = TTPAD + TTBORDER,
 			.width = slice->ttw,
-			.height = dc.fonth,
+			.height = pie.fonth,
 		},
 		slice->label,
 		strlen(slice->label)
@@ -1416,6 +1364,8 @@ cleanmenu(struct Menu *menu)
 	struct Slice *slice;
 	struct Slice *tmp;
 
+	if (menu == NULL)
+		return;
 	slice = menu->list;
 	while (slice != NULL) {
 		if (slice->submenu != NULL)
@@ -1703,35 +1653,6 @@ done:
 	cleangenmenu(rootmenu);
 }
 
-/* cleanup drawing context */
-static void
-cleandc(void)
-{
-	int i, j;
-
-	ctrlfnt_free(dc.fontset);
-	for (i = 0; i < SCHEME_LAST; i++) {
-		for (j = 0; j < COLOR_LAST; j++) {
-			if (dc.colors[i][j].pict != None) {
-				XRenderFreePicture(
-					pie.display,
-					dc.colors[i][j].pict
-				);
-			}
-			if (dc.colors[i][j].pix != None) {
-				XFreePixmap(
-					pie.display,
-					dc.colors[i][j].pix
-				);
-			}
-		}
-	}
-	XFreePixmap(pie.display, pie.clip);
-	XDestroyWindow(pie.display, pie.dummy);
-	XRenderFreePicture(pie.display, pie.gradient);
-	XFreeGC(pie.display, dc.gc);
-}
-
 static char *
 getresource(XrmDatabase xdb, enum Resource resource)
 {
@@ -1764,7 +1685,7 @@ setcolor(int scheme, int colornum, const char *colorname)
 		warnx("%s: unknown color name", colorname);
 		return;
 	}
-	dc.colors[scheme][colornum].chans = (XRenderColor){
+	pie.colors[scheme][colornum].chans = (XRenderColor){
 		.red   = FLAG(color.flags, DoRed)   ? color.red   : 0x0000,
 		.green = FLAG(color.flags, DoGreen) ? color.green : 0x0000,
 		.blue  = FLAG(color.flags, DoBlue)  ? color.blue  : 0x0000,
@@ -1773,8 +1694,8 @@ setcolor(int scheme, int colornum, const char *colorname)
 	XRenderFillRectangle(
 		pie.display,
 		PictOpSrc,
-		dc.colors[scheme][colornum].pict,
-		&dc.colors[scheme][colornum].chans,
+		pie.colors[scheme][colornum].pict,
+		&pie.colors[scheme][colornum].chans,
 		0, 0, 1, 1
 	);
 }
@@ -1796,8 +1717,8 @@ setfont(const char *facename, double facesize)
 	);
 	if (fontset == NULL)
 		return;
-	dc.fontset = fontset;
-	dc.fonth = ctrlfnt_height(fontset);
+	pie.fontset = fontset;
+	pie.fonth = ctrlfnt_height(fontset);
 }
 
 static XrmDatabase
@@ -1923,10 +1844,10 @@ loadresources(const char *str)
 			[3] = XDoubleToFixed(1.0),
 		},
 		(XRenderColor[]){
-			[0] = dc.colors[SCHEME_BORDER][COLOR_TOP].chans,
-			[1] = dc.colors[SCHEME_BORDER][COLOR_TOP].chans,
-			[2] = dc.colors[SCHEME_BORDER][COLOR_BOT].chans,
-			[3] = dc.colors[SCHEME_BORDER][COLOR_BOT].chans,
+			[0] = pie.colors[SCHEME_BORDER][COLOR_TOP].chans,
+			[1] = pie.colors[SCHEME_BORDER][COLOR_TOP].chans,
+			[2] = pie.colors[SCHEME_BORDER][COLOR_BOT].chans,
+			[3] = pie.colors[SCHEME_BORDER][COLOR_BOT].chans,
 		},
 		4
 	);
@@ -2030,64 +1951,151 @@ initresources(void)
 static int
 inittheme(void)
 {
-	XGCValues values;
-	unsigned long valuemask;
 	int i, j;
 
-	dc.colors[SCHEME_NORMAL][COLOR_BG].chans = DEF_COLOR_BG;
-	dc.colors[SCHEME_NORMAL][COLOR_FG].chans = DEF_COLOR_FG;
-	dc.colors[SCHEME_SELECT][COLOR_BG].chans = DEF_COLOR_SELBG;
-	dc.colors[SCHEME_SELECT][COLOR_FG].chans = DEF_COLOR_SELFG;
-	dc.colors[SCHEME_BORDER][COLOR_TOP].chans = DEF_COLOR_BORDER;
-	dc.colors[SCHEME_BORDER][COLOR_BOT].chans = DEF_COLOR_BORDER;
+	pie.colors[SCHEME_NORMAL][COLOR_BG].chans = DEF_COLOR_BG;
+	pie.colors[SCHEME_NORMAL][COLOR_FG].chans = DEF_COLOR_FG;
+	pie.colors[SCHEME_SELECT][COLOR_BG].chans = DEF_COLOR_SELBG;
+	pie.colors[SCHEME_SELECT][COLOR_FG].chans = DEF_COLOR_SELFG;
+	pie.colors[SCHEME_BORDER][COLOR_TOP].chans = DEF_COLOR_BORDER;
+	pie.colors[SCHEME_BORDER][COLOR_BOT].chans = DEF_COLOR_BORDER;
 	for (i = 0; i < SCHEME_LAST; i++) {
 		for (j = 0; j < COLOR_LAST; j++) {
-			dc.colors[i][j].pix = XCreatePixmap(
+			pie.colors[i][j].pix = XCreatePixmap(
 				pie.display,
 				pie.dummy,
 				1, 1,
 				pie.depth
 			);
-			if (dc.colors[i][j].pix == None) {
+			if (pie.colors[i][j].pix == None) {
 				warnx("could not create pixmap");
 				return RETURN_FAILURE;
 			}
-			dc.colors[i][j].pict = XRenderCreatePicture(
+			pie.colors[i][j].pict = XRenderCreatePicture(
 				pie.display,
-				dc.colors[i][j].pix,
+				pie.colors[i][j].pix,
 				pie.xformat,
 				CPRepeat,
 				&(XRenderPictureAttributes){
 					.repeat = RepeatNormal,
 				}
 			);
-			if (dc.colors[i][j].pict == None) {
+			if (pie.colors[i][j].pict == None) {
 				warnx("could not create pixmap");
 				return RETURN_FAILURE;
 			}
 			XRenderFillRectangle(
 				pie.display,
 				PictOpSrc,
-				dc.colors[i][j].pict,
-				&dc.colors[i][j].chans,
+				pie.colors[i][j].pict,
+				&pie.colors[i][j].chans,
 				0, 0, 1, 1
 			);
 		}
 	}
 	loadresources(XResourceManagerString(pie.display));
-	if (dc.fontset == NULL)
+	if (pie.fontset == NULL)
 		setfont(NULL, 0.0);
-	if (dc.fontset == NULL) {
+	if (pie.fontset == NULL) {
 		warnx("could not load any font");
 		return RETURN_FAILURE;
 	}
-
-	/* create common GC */
-	values.arc_mode = ArcPieSlice;
-	values.line_width = 1;
-	valuemask = GCLineWidth | GCArcMode;
-	dc.gc = XCreateGC(pie.display, pie.dummy, valuemask, &values);
 	return RETURN_SUCCESS;
+}
+
+static int
+initpie(void)
+{
+	GC gc;
+
+	/* set tooltip geometry */
+	pie.tooltiph = pie.fonth + 2 * TTPAD;
+
+	/* set the geometry of the triangle for submenus */
+	pie.triangleouter = pie.radius - TRIANGLE_DISTANCE;
+	pie.triangleinner = pie.radius - TRIANGLE_DISTANCE - TRIANGLE_WIDTH;
+	pie.triangleangle = ((double)TRIANGLE_HEIGHT / 2.0) / (double)pie.triangleinner;
+
+	/* set the separator beginning and end */
+	pie.separatorbeg = pie.radius * SEPARATOR_BEG;
+	pie.separatorend = pie.radius * SEPARATOR_END;
+	pie.innerangle = atan(1.0 / (2.0 * pie.separatorbeg));
+	pie.outerangle = atan(1.0 / (2.0 * pie.separatorend));
+
+	/* create bitmap mask (depth = 1) */
+	pie.clip = XCreatePixmap(
+		pie.display,
+		pie.dummy,
+		pie.fulldiameter,
+		pie.fulldiameter,
+		1
+	);
+	if (pie.clip == None) {
+		warnx("could not create bitmap");
+		return RETURN_FAILURE;
+	}
+
+	/* Create the mask GC */
+	gc = XCreateGC(
+		pie.display,
+		pie.clip,
+		GCBackground | GCArcMode,
+		&(XGCValues){
+			.background = 1,
+			.arc_mode = ArcPieSlice,
+		}
+	);
+	if (gc == NULL) {
+		warnx("could not create graphics context");
+		return RETURN_FAILURE;
+	}
+
+	/* clear the bitmap */
+	XSetForeground(pie.display, gc, 0);
+	XFillRectangle(pie.display, pie.clip, gc, 0, 0, pie.fulldiameter, pie.fulldiameter);
+
+	/* create round shape */
+	XSetForeground(pie.display, gc, 1);
+	XFillArc(pie.display, pie.clip, gc, 0, 0,
+	         pie.fulldiameter, pie.fulldiameter, 0, 360*64);
+	XFreeGC(pie.display, gc);
+	return RETURN_SUCCESS;
+}
+
+static void
+cleanup(void)
+{
+	int i, j;
+
+	if (pie.fontset != NULL)
+		ctrlfnt_free(pie.fontset);
+	for (i = 0; i < SCHEME_LAST; i++) {
+		for (j = 0; j < COLOR_LAST; j++) {
+			if (pie.colors[i][j].pict != None) {
+				XRenderFreePicture(
+					pie.display,
+					pie.colors[i][j].pict
+				);
+			}
+			if (pie.colors[i][j].pix != None) {
+				XFreePixmap(
+					pie.display,
+					pie.colors[i][j].pix
+				);
+			}
+		}
+	}
+	if (pie.clip != None)
+		XFreePixmap(pie.display, pie.clip);
+	if (pie.gradient != None)
+		XRenderFreePicture(pie.display, pie.gradient);
+	if (pie.colormap != None)
+		XFreeColormap(pie.display, pie.colormap);
+	if (pie.dummy != None)
+		XDestroyWindow(pie.display, pie.dummy);
+	if (pie.display != NULL)
+		XCloseDisplay(pie.display);
+	ctrlfnt_term();
 }
 
 int
@@ -2160,10 +2168,9 @@ main(int argc, char *argv[])
 
 error:
 	free(iconstring);
-	cleanmenu(rootmenu);
-	cleandc();
-	XCloseDisplay(pie.display);
-	ctrlfnt_term();
+	if (rootmenu != NULL)
+		cleanmenu(rootmenu);
+	cleanup();
 
 	return exitval;
 }
