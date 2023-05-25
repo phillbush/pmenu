@@ -1385,7 +1385,7 @@ cleanmenu(struct Menu *menu)
 			free(tmp->file);
 		if (tmp->icon != NULL) {
 			imlib_context_set_image(tmp->icon);
-			imlib_free_image();
+			imlib_free_image_and_decache();
 		}
 		slice = slice->next;
 		free(tmp);
@@ -1505,7 +1505,6 @@ warppointer(struct Menu *currmenu)
 	);
 }
 
-/* run event loop */
 static void
 run(struct pollfd *pfd, struct Monitor *mon, struct Menu *rootmenu)
 {
