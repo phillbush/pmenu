@@ -108,11 +108,11 @@ An item without initial tabs is a top-level item.
 The image is a string of the form
 .Qq Ic "IMG:/path/to/image.png" .
 It specifies the path to an image file to be shown as icon in the slice.
-If thepath does not begin with
-.Qq Pp "/" ,
-.Qq Pp "./" ,
+If the path does not begin with
+.Qq Pa "/" ,
+.Qq Pa "./" ,
 or
-.Qq Pp "../" ,
+.Qq Pa "../" ,
 the file is searched on the paths specified in the
 .Ev ICONPATH
 environment variable.
@@ -144,13 +144,13 @@ Pie slices can be selected using
 and
 .Ic Esc .
 .Bl -tag -width Ds
-.Ic Tab
+.It Ic Tab
 Cycle through the slices in the clockwise direction.
-.Ic Shift-Tab
+.It Ic Shift-Tab
 Cycle through the slices in the counterclockwise direction.
-.Ic Enter
+.It Ic Enter
 Select the highlighted item.
-.Ic Esc
+.It Ic Esc
 Close a menu.
 .El
 .Sh RESOURCES

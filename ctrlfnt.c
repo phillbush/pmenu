@@ -8,7 +8,6 @@
 #include <X11/extensions/Xrender.h>
 #include <fontconfig/fontconfig.h>
 
-#include "defs.h"
 #include "ctrlfnt.h"
 
 struct VArray {
@@ -108,7 +107,7 @@ openxftfontset(Display *display, const char *fontspec, double fontsize)
 		fontset->fonts[0] = openxftfont(display, "", fontsize);
 		if (fontset->fonts[0] == NULL)
 			goto error;
-		return fontset;
+		goto done;
 	}
 	for (t = strtok_r(s, ",", &last);
 	     t != NULL;
@@ -120,6 +119,7 @@ openxftfontset(Display *display, const char *fontspec, double fontsize)
 	}
 	if (fontset->nmemb == 0)
 		goto error;
+done:
 	free(s);
 	return fontset;
 error:
@@ -338,9 +338,10 @@ drawxftstring(CtrlFontSet *fontset, Picture picture, Picture src,
 	size_t nwritten = 0;
 	size_t n = 0;
 	int x = rect.x;
+	int w = 0;
 
 	if (nbytes == 0)
-		return RETURN_SUCCESS;
+		return 0;
 	while (end < text + nbytes && end < text + MAXGLYPHS)
 		glyphs[nglyphs++] = getnextutf8char(end, &end);
 	while (nwritten < nglyphs) {
@@ -358,7 +359,7 @@ drawxftstring(CtrlFontSet *fontset, Picture picture, Picture src,
 			font,
 			picture,
 			0, 0,
-			x,
+			x + w,
 			rect.y + rect.height / 2
 			       + font->ascent / 2
 			       - font->descent / 2,
@@ -373,13 +374,13 @@ drawxftstring(CtrlFontSet *fontset, Picture picture, Picture src,
 			n,
 			&extents
 		);
-		x += extents.width;
+		w += extents.width;
 		nwritten += n;
 	}
-	return RETURN_SUCCESS;
+	return w;
 }
 
-static void
+static int
 drawxmbstring(CtrlFontSet *fontset, Pixmap pix, GC gc, XRectangle rect,
               const char *text, int nbytes)
 {
@@ -395,16 +396,17 @@ drawxmbstring(CtrlFontSet *fontset, Pixmap pix, GC gc, XRectangle rect,
 		text,
 		nbytes
 	);
+	return box.width;
 }
 
-static void
+static int
 drawxstring(CtrlFontSet *fontset, Pixmap pix, GC gc, XRectangle rect,
             const char *text, int nbytes)
 {
 	XChar2b glyphs[MAXGLYPHS];
 	int nglyphs;
 
-	nglyphs = utf8toxchar2b(glyphs, LEN(glyphs), text, nbytes);
+	nglyphs = utf8toxchar2b(glyphs, MAXGLYPHS, text, nbytes);
 	XSetFont(fontset->display, gc, fontset->xlfd_font->fid);
 	XDrawString16(
 		fontset->display,
@@ -417,6 +419,7 @@ drawxstring(CtrlFontSet *fontset, Pixmap pix, GC gc, XRectangle rect,
 		glyphs,
 		nglyphs
 	);
+	return XTextWidth16(fontset->xlfd_font, glyphs, nglyphs);
 }
 
 static int
@@ -426,6 +429,7 @@ drawx(CtrlFontSet *fontset, Picture picture, Picture src,
 	Pixmap pix = None;
 	Picture mask = None;
 	GC gc = NULL;
+	int retval;
 
 	pix = XCreatePixmap(
 		fontset->display,
@@ -461,9 +465,11 @@ drawx(CtrlFontSet *fontset, Picture picture, Picture src,
 	);
 	XSetForeground(fontset->display, gc, 1);
 	if (fontset->xlfd_font != NULL)
-		drawxstring(fontset, pix, gc, rect, text, nbytes);
+		retval = drawxstring(fontset, pix, gc, rect, text, nbytes);
 	else if (fontset->xlfd_fontset != NULL)
-		drawxmbstring(fontset, pix, gc, rect, text, nbytes);
+		retval = drawxmbstring(fontset, pix, gc, rect, text, nbytes);
+	else
+		goto error;
 	XRenderComposite(
 		fontset->display,
 		PictOpOver,
@@ -478,7 +484,7 @@ drawx(CtrlFontSet *fontset, Picture picture, Picture src,
 	XFreeGC(fontset->display, gc);
 	XFreePixmap(fontset->display, pix);
 	XRenderFreePicture(fontset->display, mask);
-	return RETURN_SUCCESS;
+	return retval;
 error:
 	if (gc != NULL)
 		XFreeGC(fontset->display, gc);
@@ -486,7 +492,7 @@ error:
 		XFreePixmap(fontset->display, pix);
 	if (mask != None)
 		XRenderFreePicture(fontset->display, mask);
-	return RETURN_FAILURE;
+	return -1;
 }
 
 static int
@@ -541,7 +547,7 @@ widthxstring(CtrlFontSet *fontset, const char *text, int nbytes)
 	XChar2b glyphs[MAXGLYPHS];
 	int nglyphs;
 
-	nglyphs = utf8toxchar2b(glyphs, LEN(glyphs), text, nbytes);
+	nglyphs = utf8toxchar2b(glyphs, MAXGLYPHS, text, nbytes);
 	return XTextWidth16(fontset->xlfd_font, glyphs, nglyphs);
 }
 
@@ -582,19 +588,19 @@ ctrlfnt_open(Display *display, int screen, Visual *visual, Colormap
 	}
 	switch (fonttype) {
 	case XLFD_FONT:
-		fontset->xlfd_font = openxfont(display, str, TRUE);
+		fontset->xlfd_font = openxfont(display, str, 1);
 		break;
 	case XLFD_FONTSET:
-		fontset->xlfd_fontset = openxfontset(display, str, TRUE);
+		fontset->xlfd_fontset = openxfontset(display, str, 1);
 		break;
 	case XFT_FONTSET:
 		fontset->xft_fontset = openxftfontset(display, str, fontsize);
 		break;
 	case GUESSTYPE:
 		if (hascomma)
-			fontset->xlfd_fontset = openxfontset(display, str, FALSE);
+			fontset->xlfd_fontset = openxfontset(display, str, 0);
 		else
-			fontset->xlfd_font = openxfont(display, str, FALSE);
+			fontset->xlfd_font = openxfont(display, str, 0);
 		if (fontset->xlfd_font == NULL && fontset->xlfd_fontset == NULL)
 			fontset->xft_fontset = openxftfontset(display, str, fontsize);
 		break;
@@ -614,14 +620,14 @@ ctrlfnt_draw(CtrlFontSet *fontset, Picture picture, Picture src,
              XRectangle rect, const char *text, int nbytes)
 {
 	if (fontset == NULL)
-		return RETURN_FAILURE;
+		return -1;
 	if (fontset->xft_fontset != NULL)
 		return drawxftstring(fontset, picture, src, rect, text, nbytes);
 	if (fontset->xlfd_fontset != NULL)
 		return drawx(fontset, picture, src, rect, text, nbytes);
 	if (fontset->xlfd_font != NULL)
 		return drawx(fontset, picture, src, rect, text, nbytes);
-	return RETURN_FAILURE;
+	return -1;
 }
 
 int

@@ -21,13 +21,16 @@ ${PROG}: ${OBJS}
 	${CC} -o $@ ${OBJS} ${LIBS} ${LDFLAGS}
 
 pmenu.o: ctrlfnt.h
-${OBJS}: defs.h
 
 .c.o:
 	${CC} -std=c99 -pedantic ${DEFS} ${INCS} ${CFLAGS} ${CPPFLAGS} -c $<
 
 tags: ${SRCS}
 	ctags ${SRCS}
+
+lint: ${SRCS}
+	-mandoc -T lint -W warning ${MAN}
+	-clang-tidy ${SRCS} -- -std=c99 ${DEFS} ${INCS} ${CPPFLAGS}
 
 clean:
 	-rm -f ${OBJS} ${PROG} ${PROG:=.core}
@@ -42,4 +45,4 @@ uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
 	rm -f ${DESTDIR}${MANPREFIX}/man1/${MAN}
 
-.PHONY: all clean install uninstall
+.PHONY: all tags clean install uninstall lint

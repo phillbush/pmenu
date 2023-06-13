@@ -5,6 +5,7 @@
 #include <locale.h>
 #include <math.h>
 #include <poll.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,6 @@
 #include <X11/extensions/Xinerama.h>
 #include <Imlib2.h>
 
-#include "defs.h"
 #include "ctrlfnt.h"
 
 #define SHELL    "sh"
@@ -34,6 +34,10 @@
 #define MAX(x,y)            ((x)>(y)?(x):(y))
 #define MIN(x,y)            ((x)<(y)?(x):(y))
 #define BETWEEN(x, a, b)    ((a) <= (x) && (x) <= (b))
+#define LEN(a)              (sizeof(a) / sizeof((a)[0]))
+#define FLAG(f, b)          (((f) & (b)) == (b))
+#define RETURN_FAILURE      (-1)
+#define RETURN_SUCCESS      0
 
 #define ATOMS                                   \
 	X(NET_WM_WINDOW_TYPE)                   \
@@ -283,22 +287,21 @@ eexecsh(const char *cmd)
 static void
 setbutton(char *s)
 {
-	size_t len;
+	char *endp;
+	long l;
 
-	if ((len = strlen(s)) < 1)
-		return;
-	button = strtoul(s, NULL, 10);
+	l = strtol(s, &endp, 10);
+	if (s[0] != '\0' && *endp == '\0' && l > 0 && l <= 100)
+		button = l;
 }
 
 /* set modifier global variable */
 static void
 setmodifier(char *s)
 {
-	size_t len;
-
 	if (strncasecmp(s, "Mod", 3) == 0)
 		s += 3;
-	if ((len = strlen(s)) < 1)
+	if (*s == '\0')
 		return;
 	switch (s[0]) {
 	case '0': modifier = AnyModifier; break;
@@ -403,9 +406,7 @@ getoptions(int argc, char **argv)
 			break;
 		}
 	}
-	argc -= optind;
-	argv += optind;
-	if (argc > 0) {
+	if (argc - optind > 0) {
 		usage();
 	}
 }
@@ -624,7 +625,7 @@ isabsolute(const char *s)
 static Imlib_Image
 loadicon(const char *file, int size, int *width_ret, int *height_ret)
 {
-	Imlib_Image icon;
+	Imlib_Image icon = NULL;
 	Imlib_Load_Error errcode;
 	char path[PATH_MAX];
 	const char *errstr;
@@ -732,8 +733,8 @@ setslices(struct Menu *menu)
 			textwidth = 0;
 
 		/* get position of slice's label */
-		slice->labelx = pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
-		slice->labely = pie.radius - ((pie.radius*2)/3 * sin(a)) - (pie.fonth / 2);
+		slice->labelx = pie.border + pie.radius + ((pie.radius*2)/3 * cos(a)) - (textwidth / 2);
+		slice->labely = pie.border + pie.radius - ((pie.radius*2)/3 * sin(a)) - (pie.fonth / 2);
 
 		/* get position of submenu */
 		slice->x = pie.radius + (pie.diameter * (cos(a) * 0.9));
@@ -753,8 +754,8 @@ setslices(struct Menu *menu)
 			iconsize = MIN(maxiconsize, iconsize);
 
 			if ((slice->icon = loadicon(slice->file, iconsize, &iconw, &iconh)) != NULL) {
-				slice->iconx = pie.radius + (pie.radius * (cos(a) * 0.6)) - iconw / 2;
-				slice->icony = pie.radius - (pie.radius * (sin(a) * 0.6)) - iconh / 2;
+				slice->iconx = pie.border + pie.radius + (pie.radius * (cos(a) * 0.6)) - iconw / 2;
+				slice->icony = pie.border + pie.radius - (pie.radius * (sin(a) * 0.6)) - iconh / 2;
 			}
 
 			free(slice->file);
@@ -1074,17 +1075,17 @@ unmapmenu(struct Menu *currmenu)
 
 /* draw background of selected slice */
 static void
-drawslice(Picture picture, Picture color, int nslices, int slicen, int separatorbeg)
+drawslice(Picture picture, Picture color, int nslices, int slicen, int beg, int end)
 {
 	XPointDouble *p;
 	int i, outer, inner, npoints;
 	double h, a, b;
 
 	/* determine number of segments to draw */
-	h = hypot(pie.radius, pie.radius)/2;
+	h = hypot(end, end)/2;
 	outer = ((2 * M_PI) / (nslices * acos(h/(h+1.0)))) + 0.5;
 	outer = (outer < 3) ? 3 : outer;
-	h = hypot(separatorbeg, separatorbeg)/2;
+	h = hypot(beg, beg)/2;
 	inner = ((2 * M_PI) / (nslices * acos(h/(h+1.0)))) + 0.5;
 	inner = (inner < 3) ? 3 : inner;
 	npoints = inner + outer + 2;
@@ -1095,15 +1096,15 @@ drawslice(Picture picture, Picture color, int nslices, int slicen, int separator
 	/* outer points */
 	a = ((2 * M_PI) / (nslices * outer));
 	for (i = 0; i <= outer; i++) {
-		p[i].x = pie.border + pie.radius + pie.radius * cos((i - (outer / 2.0)) * a - b);
-		p[i].y = pie.border + pie.radius + pie.radius * sin((i - (outer / 2.0)) * a - b);
+		p[i].x = pie.border + pie.radius + end * cos((i - (outer / 2.0)) * a - b);
+		p[i].y = pie.border + pie.radius + end * sin((i - (outer / 2.0)) * a - b);
 	}
 
 	/* inner points */
 	a = ((2 * M_PI) / (nslices * inner));
 	for (i = 0; i <= inner; i++) {
-		p[i + outer + 1].x = pie.border + pie.radius + separatorbeg * cos(((inner - i) - (inner / 2.0)) * a - b);
-		p[i + outer + 1].y = pie.border + pie.radius + separatorbeg * sin(((inner - i) - (inner / 2.0)) * a - b);
+		p[i + outer + 1].x = pie.border + pie.radius + beg * cos(((inner - i) - (inner / 2.0)) * a - b);
+		p[i + outer + 1].y = pie.border + pie.radius + beg * sin(((inner - i) - (inner / 2.0)) * a - b);
 	}
 	
 	XRenderCompositeDoublePoly(
@@ -1206,7 +1207,8 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 		pie.colors[SCHEME_NORMAL][COLOR_BG].pict,
 		1,
 		0,
-		0
+		0,
+		pie.radius
 	);
 	if (selected != NULL) {
 		drawslice(
@@ -1214,7 +1216,8 @@ drawmenu(struct Menu *menu, struct Slice *selected)
 			pie.colors[SCHEME_SELECT][COLOR_BG].pict,
 			menu->nslices,
 			selected->slicen,
-			pie.separatorbeg
+			pie.separatorbeg,
+			pie.radius
 		);
 	}
 
@@ -1510,6 +1513,8 @@ run(struct pollfd *pfd, struct Menu *rootmenu, XRectangle *monitor, XPoint *poin
 	int timeout;
 	int nready;
 
+	if (rootmenu == NULL)
+		return;
 	nready = 3;
 	timeout = -1;
 	prevmenu = currmenu = rootmenu;
@@ -1614,6 +1619,7 @@ selectslice:
 			} else if ((ksym == XK_Return) &&
 			           currmenu->selected != NULL) {
 				slice = currmenu->selected;
+				menu = currmenu;
 				goto selectslice;
 			} else if ((ksym == XK_Escape) &&
 			           currmenu->parent != NULL) {
@@ -1729,7 +1735,7 @@ loadresources(const char *str)
 	long l;
 	double d, d0, d1;
 	double fontsize = 0.0;
-	int changefont = FALSE;
+	int changefont = false;
 
 	if (str == NULL)
 		return;
@@ -1768,13 +1774,13 @@ loadresources(const char *str)
 			break;
 		case FACE_NAME:
 			fontname = value;
-			changefont = TRUE;
+			changefont = true;
 			break;
 		case FACE_SIZE:
 			d = strtod(value, &endp);
 			if (value[0] != '\0' && *endp == '\0' && d > 0.0 && d <= 100.0) {
 				fontsize = d;
-				changefont = TRUE;
+				changefont = true;
 			}
 			break;
 		case NORMAL_BG:
@@ -1865,8 +1871,8 @@ initxconn(void)
 		warnx("could not intern X pie.atoms");
 		return RETURN_FAILURE;
 	}
-	pie.screen = DefaultScreen(pie.display);
-	pie.rootwin = RootWindow(pie.display, pie.screen);
+	pie.screen = XDefaultScreen(pie.display);
+	pie.rootwin = XRootWindow(pie.display, pie.screen);
 	return RETURN_SUCCESS;
 }
 
@@ -1895,9 +1901,9 @@ initvisual(void)
 		pie.visual = vinfo.visual;
 		pie.depth = vinfo.depth;
 	} else {
-		pie.colormap = DefaultColormap(pie.display, pie.screen);
-		pie.visual = DefaultVisual(pie.display, pie.screen);
-		pie.depth = DefaultDepth(pie.display, pie.screen);
+		pie.colormap = XDefaultColormap(pie.display, pie.screen);
+		pie.visual = XDefaultVisual(pie.display, pie.screen);
+		pie.depth = XDefaultDepth(pie.display, pie.screen);
 	}
 	pie.xformat = XRenderFindVisualFormat(pie.display, pie.visual);
 	if (pie.xformat == NULL)
@@ -2109,6 +2115,7 @@ main(int argc, char *argv[])
 	/* get configuration */
 	getoptions(argc, argv);
 
+	pie.display = NULL;
 	for (i = 0; i < LEN(initsteps); i++)
 		if ((*initsteps[i])() == RETURN_FAILURE)
 			goto error;
@@ -2116,6 +2123,7 @@ main(int argc, char *argv[])
 	/* imlib2 stuff */
 	imlib_set_cache_size(2048 * 1024);
 	imlib_context_set_dither(1);
+	imlib_context_set_blend(1);
 	imlib_context_set_display(pie.display);
 	imlib_context_set_visual(pie.visual);
 	imlib_context_set_colormap(pie.colormap);
