@@ -1,5 +1,13 @@
                                CHANGELOG
 
+3.1.0 (2023-06-13).
+• Added -d option to specify diameter.
+• Added -e option to run output on shell.
+• Added -N option to specify X resource instance name.
+• Added X11 resources for Motif-like 3D shadow.
+• Added support for XLFD fonts.
+• Changed manual from man(7) to mdoc(7).
+
 3.0.1 (2022-03-21).
 • Fix Makefile.
 
