@@ -1,5 +1,8 @@
                                CHANGELOG
 
+3.1.1 (2023-07-25).
+• Fix initialization when X server has no resource database.
+
 3.1.0 (2023-06-13).
 • Added -d option to specify diameter.
 • Added -e option to run output on shell.
