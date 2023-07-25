@@ -1727,7 +1727,7 @@ static void
 loadresources(const char *str)
 {
 
-	XrmDatabase xdb;
+	XrmDatabase xdb = NULL;
 	char *value;
 	enum Resource resource;
 	char *endp;
@@ -1737,13 +1737,13 @@ loadresources(const char *str)
 	double fontsize = 0.0;
 	int changefont = false;
 
-	if (str == NULL)
-		return;
-	if ((xdb = loadxdb(str)) == NULL)
-		return;
 	pie.border = DEF_BORDER;
 	if (!harddiameter)
 		pie.diameter = DEF_DIAMETER;
+	if (str == NULL)
+		goto done;
+	if ((xdb = loadxdb(str)) == NULL)
+		goto done;
 	for (resource = 0; resource < NRESOURCES; resource++) {
 		value = getresource(xdb, resource);
 		if (value == NULL)
@@ -1802,12 +1802,12 @@ loadresources(const char *str)
 			break;
 		}
 	}
-
-	pie.radius = (pie.diameter + 1) / 2;
-	pie.fulldiameter = pie.diameter + (pie.border * 2);
-
 	if (changefont)
 		setfont(fontname, fontsize);
+	XrmDestroyDatabase(xdb);
+done:
+	pie.radius = (pie.diameter + 1) / 2;
+	pie.fulldiameter = pie.diameter + (pie.border * 2);
 
 	/* create gradient picture */
 	if (pie.gradient != None)
@@ -1847,8 +1847,6 @@ loadresources(const char *str)
 		},
 		4
 	);
-
-	XrmDestroyDatabase(xdb);
 }
 
 static int
