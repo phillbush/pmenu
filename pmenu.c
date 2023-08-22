@@ -382,8 +382,7 @@ getoptions(int argc, char **argv)
 			s = optarg;
 			setmodifier(s);
 			if ((t = strchr(s, '-')) == NULL)
-				return;
-			*(t++) = '\0';
+				t = s;
 			setbutton(t);
 			break;
 
