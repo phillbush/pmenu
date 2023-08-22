@@ -381,8 +381,9 @@ getoptions(int argc, char **argv)
 			rootmodeflag = 1;
 			s = optarg;
 			setmodifier(s);
-			if ((t = strchr(s, '-')) == NULL)
-				t = s;
+			t = s;
+			if ((t = strchr(s, '-')) != NULL)
+				t++;
 			setbutton(t);
 			break;
 
