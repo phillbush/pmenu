@@ -91,9 +91,6 @@ enum {
 };
 
 enum {
-	TRIANGLE_WIDTH = 3,
-	TRIANGLE_HEIGHT = 7,
-	TRIANGLE_DISTANCE = 6,
 	TTBORDER = 1,
 };
 
@@ -2007,9 +2004,9 @@ initpie(void)
 	pie.tooltiph = pie.fonth + 2 * TTPAD;
 
 	/* set the geometry of the triangle for submenus */
-	pie.triangleouter = pie.radius - TRIANGLE_DISTANCE;
-	pie.triangleinner = pie.radius - TRIANGLE_DISTANCE - TRIANGLE_WIDTH;
-	pie.triangleangle = ((double)TRIANGLE_HEIGHT / 2.0) / (double)pie.triangleinner;
+	pie.triangleouter = pie.radius - pie.fonth/4;
+	pie.triangleinner = pie.radius - pie.fonth/2;
+	pie.triangleangle = ((double)pie.fonth / 4.0) / (double)pie.triangleinner;
 
 	/* set the separator beginning and end */
 	pie.separatorbeg = pie.radius * SEPARATOR_BEG;
