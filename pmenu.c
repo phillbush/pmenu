@@ -361,7 +361,7 @@ getoptions(int argc, char **argv)
 		switch (ch) {
 		case 'd':
 			l = strtol(optarg, &endp, 10);
-			if (optarg[0] != '\0' && *endp == '\0' && l > 0 && l <= 100) {
+			if (optarg[0] != '\0' && *endp == '\0' && l > 0) {
 				harddiameter = 1;
 				pie.diameter = l;
 			}
