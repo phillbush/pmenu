@@ -379,10 +379,10 @@ getoptions(int argc, char **argv)
 			rootmodeflag = 1;
 			s = optarg;
 			setmodifier(s);
-			t = s;
 			if ((t = strchr(s, '-')) != NULL)
-				t++;
-			setbutton(t);
+				setbutton(++t);
+			else
+				setbutton(s);
 			break;
 
 		/* the options below are deprecated and may be removed in the future */
